@@ -1,3 +1,5 @@
+---
+
 # Go User Management System
 
 Enterprise-ready **User Management & Authentication System** built from scratch using **Golang**, **Gin**, **MongoDB**, and **React (Vite)**.
@@ -6,52 +8,67 @@ This project focuses on **clean architecture**, **scalability**, and **real-worl
 
 ---
 
+💻 Requirements
+Software
+
+- Go 1.21+
+- MongoDB 6.x
+- Node.js 20+ (for React frontend)
+- SMTP service (e.g., Gmail, SendGrid)
+- Make (for running scripts and automation)
+
 ## 🚀 Features
 
 ### 🔐 Authentication
-- User Registration
-- User Login
-- Two-Step Verification (2FA)
-- Logout
-- Forgot Password
-- Reset Password
-- Change Password
+
+* User Registration
+* User Login
+* Two-Step Verification (2FA)
+* Logout
+* Forgot Password
+* Reset Password
+* Change Password
 
 ### 👥 Team & Invite Management
-- Create Teams
-- Invite Team Members
-- Accept / Verify Invites
-- Resend Invite
-- Activate / Deactivate Members
-- Remove Members
-- Role-based access control (Admin / Member)
+
+* Create Teams
+* Invite Team Members
+* Accept / Verify Invites
+* Resend Invite
+* Activate / Deactivate Members
+* Remove Members
+* Role-based access control (Admin / Member)
 
 ### 🆔 Identity Strategy
-- UUID as primary public identifier
-- MongoDB ObjectID supported as an alternative (internal usage)
-- Secure token-based authentication (JWT)
+
+* UUID as primary public identifier
+* MongoDB ObjectID supported as an alternative (internal usage)
+* Secure token-based authentication (JWT)
 
 ### 📧 Email (SMTP)
-- Email verification
-- Password reset emails
-- Team invitation emails
-- OTP delivery for 2FA
+
+* Email verification
+* Password reset emails
+* Team invitation emails
+* OTP delivery for 2FA
 
 ---
 
 ## 🏗️ Tech Stack
 
 ### Backend
-- **Go (Golang)**
-- **Gin** – HTTP web framework
-- **Gorilla Mux** – Advanced routing concepts
-- **MongoDB**
-- **JWT** – Token-based authentication
-- **SMTP** – Email delivery
 
-### Frontend (Planned)
-- **React**
-- **Vite**
+* **Go (Golang)**
+* **Gin** – HTTP web framework
+* **Gorilla Mux** – Advanced routing concepts
+* **MongoDB**
+* **JWT** – Token-based authentication
+* **SMTP** – Email delivery
+
+### Frontend (Planned - not started)
+
+* **React**
+* **Vite**
 
 ---
 
@@ -85,28 +102,91 @@ backend/
 └── docs/               # API documentation (future)
 ```
 
-### 🔒 Security Practices
+---
 
-- Password hashing (bcrypt or equivalent)
-- Token expiration and refresh strategy
-- Invite and reset tokens with expiry
-- Email verification before account activation
-- Session invalidation on password reset
+## 🔄 Request Flow
 
-### 🎯 Learning Goals
+```text
+Client (React)
+   ↓
+Routes
+   ↓
+Controllers
+   ↓
+Services
+   ↓
+Providers (DB / SMTP / Tokens)
+   ↓
+MongoDB / Email
+```
 
-- This project is designed to:
-- Understand real-world authentication systems
-- Practice clean architecture in Go
-- Learn enterprise-level project structuring
-- Build confidence designing backend systems from scratch
+Each layer has a **single responsibility**, making the system easy to maintain, test, and scale.
 
-### 🚀 Future Enhancements
+---
+---
 
-- Role-based permissions
-- Audit logs
-- Rate limiting
-- Account lockout protection
-- OAuth (Google / GitHub)
-- Background workers for email processing
-- Admin dashboard
+## 🔒 Security Practices
+
+* Password hashing (bcrypt or equivalent)
+* Token expiration and refresh strategy
+* Invite and reset tokens with expiry
+* Email verification before account activation
+* Session invalidation on password reset
+
+---
+
+## 💻 Getting Started
+
+Follow these steps to set up and run the backend locally:
+
+### 1️⃣ Clone the Repository
+
+```bash
+git clone https://github.com/yourusername/go-user-management.git
+cd go-user-management
+```
+
+### 2️⃣ Install Dependencies
+
+```bash
+go mod tidy
+```
+or 
+```bash
+make install
+```
+
+### 3️⃣ Setup Environment Variables
+
+Create a `.env` file in the root directory:
+then copy the .env.example file then paste it env
+
+### 4️⃣ Run the Server
+
+```bash
+cd cmd/api
+go run main.go
+```
+or 
+```bash
+make run
+```
+
+The API server will start at `http://localhost:8080`
+
+### 6️⃣ Optional: Run MongoDB via Docker
+
+```bash
+docker run -d -p 27017:27017 --name mongodb mongo:6
+```
+
+---
+
+## 🎯 Learning Goals
+
+This project is designed to:
+
+* Understand real-world authentication systems
+* Practice clean architecture in Go
+* Learn enterprise-level project structuring
+* Build confidence designing backend systems from scratch
