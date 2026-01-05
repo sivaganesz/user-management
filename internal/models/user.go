@@ -9,7 +9,7 @@ import (
 
 // MongoUser represents a user in the MongoDB database
 // Collection: users
-type User struct {
+type MongoUser struct {
 	ID             primitive.ObjectID    `bson:"_id,omitempty" json:"id"`
 	Email          string                `bson:"email" json:"email"`
 	PasswordHash   string                `bson:"password_hash" json:"-"` // Never expose in JSON
@@ -18,7 +18,7 @@ type User struct {
 	Region         string                `bson:"region" json:"region"`
 	Team           string                `bson:"team,omitempty" json:"team,omitempty"`
 	Permissions    []string              `bson:"permissions,omitempty" json:"permissions,omitempty"`
-	Preferences    *UserPreferences      `bson:"preferences,omitempty" json:"preferences,omitempty"`
+	Preferences    *MongoUserPreferences      `bson:"preferences,omitempty" json:"preferences,omitempty"`
 	EmailSignature string                `bson:"email_signature,omitempty" json:"emailSignature,omitempty"`
 	IsActive       bool                  `bson:"is_active" json:"isActive"`
 	OTPHash        string                `bson:"otp_hash,omitempty" json:"-"` // Never expose in JSON
@@ -28,7 +28,7 @@ type User struct {
 	LastLoginAt  *time.Time         `bson:"last_login_at,omitempty" json:"last_login_at,omitempty"`
 
 }
-type User1 struct {
+type User struct {
 	ID           primitive.ObjectID `bson:"_id,omitempty" json:"id"`
 	Email        string             `bson:"email" json:"email"`
 	PasswordHash string             `bson:"password_hash" json:"-"` // Never expose password hash in JSON
@@ -43,15 +43,6 @@ type User1 struct {
 	LastLoginAt  *time.Time         `bson:"last_login_at,omitempty" json:"last_login_at,omitempty"`
 }
 
-// MongoUserPreferences stores user-specific preferences (MongoDB version)
-type UserPreferences struct {
-	Language        string `bson:"language,omitempty" json:"language,omitempty"`
-	Timezone        string `bson:"timezone,omitempty" json:"timezone,omitempty"`
-	DateFormat      string `bson:"date_format,omitempty" json:"dateFormat,omitempty"`
-	TimeFormat      string `bson:"time_format,omitempty" json:"timeFormat,omitempty"`
-	Theme           string `bson:"theme,omitempty" json:"theme,omitempty"`
-	DashboardLayout string `bson:"dashboard_layout,omitempty" json:"dashboardLayout,omitempty"`
-}
 
 type UserRole string
 
@@ -88,7 +79,7 @@ func IsValidUserRole(role string) bool {
 }
 
 // HasPermission checks if the user has a specific permission
-func (u *User) HasPermission(permission string) bool {
+func (u *MongoUser) HasPermission(permission string) bool {
 	// Admin has all permissions
 	if u.Role == UserRoleAdmin {
 		return true
@@ -105,7 +96,7 @@ func (u *User) HasPermission(permission string) bool {
 }
 
 // IsOTPValid checks if the OTP is still valid (not expired)
-func (u *User) IsOTPValid() bool {
+func (u *MongoUser) IsOTPValid() bool {
 	if u.OTPHash == "" || u.OTPExpiresAt == nil {
 		return false
 	}
@@ -114,7 +105,7 @@ func (u *User) IsOTPValid() bool {
 }
 
 // SetOTP sets the OTP hash and expiry time (10 minutes from now)
-func (u *User) SetOTP(hash string) {
+func (u *MongoUser) SetOTP(hash string) {
 	u.OTPHash = hash
 	expiryTime := time.Now().Add(10 * time.Minute)
 	u.OTPExpiresAt = &expiryTime
@@ -122,24 +113,24 @@ func (u *User) SetOTP(hash string) {
 }
 
 // ClearOTP clears the OTP hash and expiry time
-func (u *User) ClearOTP() {
+func (u *MongoUser) ClearOTP() {
 	u.OTPHash = ""
 	u.OTPExpiresAt = nil
 	u.UpdatedAt = time.Now()
 }
 
 // UpdatePassword updates the user's password hash
-func (u *User) UpdatePassword(hash string) {
+func (u *MongoUser) UpdatePassword(hash string) {
 	u.PasswordHash = hash
 	u.UpdatedAt = time.Now()
 }
 
 // ToUser converts MongoUser to User (for service layer compatibility)
-func (m *User) ToUser() *User1 {
+func (m *MongoUser) ToUser() *User {
 	if m == nil {
 		return nil
 	}
-	return &User1{
+	return &User{
 		ID:           m.ID,
 		Email:        m.Email,
 		PasswordHash: m.PasswordHash,
@@ -155,7 +146,7 @@ func (m *User) ToUser() *User1 {
 }
 
 // ToProfile converts a User to a UserProfile (safe for API responses)
-func (u *User) ToProfile() UserProfile {
+func (u *MongoUser) ToProfile() UserProfile {
 	return UserProfile{
 		ID:          u.ID,
 		Email:       u.Email,

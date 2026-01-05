@@ -64,7 +64,7 @@ func NewJWTService(cfg config.JWTConfig) (*JWTService, error) {
 }
 
 // GenerateRefreshToken generates a new refresh token
-func (s *JWTService) GenerateAccessToken(user *models.User1) (string, error) {
+func (s *JWTService) GenerateAccessToken(user *models.User) (string, error) {
 
 	expiryMinutes := time.Duration(s.config.AccessTokenExpiry) * time.Minute
 
