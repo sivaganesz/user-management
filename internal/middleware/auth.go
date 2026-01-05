@@ -75,7 +75,7 @@ func JWTAuth(jwtService *utils.JWTService) func(http.Handler) http.Handler {
 				return
 			}
 
-			userObjectID, err := primitive.ObjectIDFromHex(claims.UserId)
+			userObjectID, err := primitive.ObjectIDFromHex(claims.UserID)
 			if err != nil {
 				log.Printf("Invalid user ID format in token: %v", err)
 				respondWithJSON(w, http.StatusUnauthorized, ErrorResponse{

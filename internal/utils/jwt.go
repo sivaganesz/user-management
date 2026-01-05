@@ -21,11 +21,12 @@ type JWTService struct {
 
 // AccessTokenClaims represents the claims in an access token
 type AccessTokenClaims struct {
-	UserId      string   `json:"sub"` // Subject - User ID
+	UserID      string   `json:"sub"` // Subject - User ID
 	Email       string   `json:"email"`
 	Name        string   `json:"name"`
 	Role        string   `json:"role"`
 	Roles       []string `json:"roles"` // Array of roles (admin, sales_rep, manager)
+	Region      string   `json:"region"`
 	Team        string   `json:"team"`
 	Permissions []string `json:"permissions"` // Array of permissions (read, write, delete)
 	jwt.RegisteredClaims
@@ -63,15 +64,16 @@ func NewJWTService(cfg config.JWTConfig) (*JWTService, error) {
 }
 
 // GenerateRefreshToken generates a new refresh token
-func (s *JWTService) GenerateAccessToken(user *models.User) (string, error) {
+func (s *JWTService) GenerateAccessToken(user *models.User1) (string, error) {
 
 	expiryMinutes := time.Duration(s.config.AccessTokenExpiry) * time.Minute
 
 	claims := AccessTokenClaims{
-		UserId:      user.ID.Hex(),
+		UserID:      user.ID.Hex(),
 		Email:       user.Email,
 		Name:        user.Name,
 		Role:        user.Role,
+		Region:      user.Region,
 		Team:        user.Team,
 		Permissions: user.Permissions,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -121,7 +123,7 @@ func (s *JWTService) ValidateAccessToken(tokenString string) (*AccessTokenClaims
 }
 
 // ValidateRefreshToken validates a refresh token and returns the user ID
-func (s *JWTService) validateRefreshToken(tokenString string) (primitive.ObjectID, error) {
+func (s *JWTService) ValidateRefreshToken(tokenString string) (primitive.ObjectID, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -142,14 +144,14 @@ func (s *JWTService) validateRefreshToken(tokenString string) (primitive.ObjectI
 	return primitive.ObjectID{}, fmt.Errorf("invalid token")
 }
 
-func (s *JWTService) validateTokenAndGetUserID(tokenString string) (primitive.ObjectID, error) {
+func (s *JWTService) ValidateTokenAndGetUserID(tokenString string) (primitive.ObjectID, error) {
 
 	claims, err := s.ValidateAccessToken(tokenString)
 	if err != nil {
 		return primitive.ObjectID{}, fmt.Errorf("failed to validate access token: %w", err)
 	}
 
-	userId, err := primitive.ObjectIDFromHex(claims.UserId)
+	userId, err := primitive.ObjectIDFromHex(claims.UserID)
 	if err != nil {
 		return primitive.ObjectID{}, fmt.Errorf("invalid user ID in token: %w", err)
 	}
