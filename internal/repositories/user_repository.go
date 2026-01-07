@@ -13,19 +13,19 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-type UserRepository struct {
+type MongoUserRepository struct {
 	client     *mongodb.Client
 	collection *mongo.Collection
 }
 
-func NewUserRepository(client *mongodb.Client) *UserRepository {
-	return &UserRepository{
+func NewMongoUserRepository(client *mongodb.Client) *MongoUserRepository {
+	return &MongoUserRepository{
 		client:     client,
 		collection: client.Collection("users"),
 	}
 }
 
-func (r *UserRepository) GetByID(ctx context.Context, id primitive.ObjectID) (*models.MongoUser, error) {
+func (r *MongoUserRepository) GetByID(ctx context.Context, id primitive.ObjectID) (*models.MongoUser, error) {
 	var user models.MongoUser
 
 	filter := bson.M{"_id": id}
@@ -38,7 +38,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id primitive.ObjectID) (*m
 }
 
 // GetByEmail retrieves a user by their email address
-func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.MongoUser, error) {
+func (r *MongoUserRepository) GetByEmail(ctx context.Context, email string) (*models.MongoUser, error) {
 	var user models.MongoUser
 
 	filter := bson.M{"email": email}
@@ -54,7 +54,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.
 }
 
 // Create inserts a new user document
-func (r *UserRepository) Create(ctx context.Context, user *models.MongoUser) error {
+func (r *MongoUserRepository) Create(ctx context.Context, user *models.MongoUser) error {
 	now := time.Now()
 	user.CreatedAt = now
 	user.UpdatedAt = now
@@ -71,7 +71,7 @@ func (r *UserRepository) Create(ctx context.Context, user *models.MongoUser) err
 }
 
 // Update modifies an existing user document
-func (r *UserRepository) Update(ctx context.Context, user *models.MongoUser) error {
+func (r *MongoUserRepository) Update(ctx context.Context, user *models.MongoUser) error {
 	// Update timestamp
 	user.UpdatedAt = time.Now()
 
@@ -103,7 +103,7 @@ func (r *UserRepository) Update(ctx context.Context, user *models.MongoUser) err
 }
 
 // UpdatePassword updates the user's password hash
-func (r *UserRepository) UpdatePassword(ctx context.Context, id primitive.ObjectID, passwordHash string) error {
+func (r *MongoUserRepository) UpdatePassword(ctx context.Context, id primitive.ObjectID, passwordHash string) error {
 	filter := bson.M{"_id": id}
 	update := bson.M{
 		"$set": bson.M{
@@ -121,7 +121,7 @@ func (r *UserRepository) UpdatePassword(ctx context.Context, id primitive.Object
 }
 
 // SetOTP sets the OTP hash and expiry time for password reset
-func (r *UserRepository) SetOTP(ctx context.Context, userID primitive.ObjectID, otpHash string, expiresAt time.Time) error {
+func (r *MongoUserRepository) SetOTP(ctx context.Context, userID primitive.ObjectID, otpHash string, expiresAt time.Time) error {
 	filter := bson.M{"_id": userID}
 	update := bson.M{
 		"$set": bson.M{
@@ -142,7 +142,7 @@ func (r *UserRepository) SetOTP(ctx context.Context, userID primitive.ObjectID, 
 	return nil
 }
 
-func (r *UserRepository) ClearOTP(ctx context.Context, userID primitive.ObjectID) error {
+func (r *MongoUserRepository) ClearOTP(ctx context.Context, userID primitive.ObjectID) error {
 	filter := bson.M{"_id": userID}
 	update := bson.M{
 		"$unset": bson.M{
@@ -167,7 +167,7 @@ func (r *UserRepository) ClearOTP(ctx context.Context, userID primitive.ObjectID
 }
 
 // ListByRegion retrieves users in a specific region with pagination
-func (r *UserRepository) ListByRegion(ctx context.Context, region string, limit, offset int) ([]*models.MongoUser, error) {
+func (r *MongoUserRepository) ListByRegion(ctx context.Context, region string, limit, offset int) ([]*models.MongoUser, error) {
 	filter := bson.M{"region": region}
 
 	opts := options.Find().
@@ -190,7 +190,7 @@ func (r *UserRepository) ListByRegion(ctx context.Context, region string, limit,
 }
 
 // ListByRole retrieves users with a specific role with pagination
-func (r *UserRepository) ListByRole(ctx context.Context, role models.UserRole, limit, offset int) ([]*models.MongoUser, error) {
+func (r *MongoUserRepository) ListByRole(ctx context.Context, role models.UserRole, limit, offset int) ([]*models.MongoUser, error) {
 	filter := bson.M{"role": role}
 
 	opts := options.Find().
@@ -213,7 +213,7 @@ func (r *UserRepository) ListByRole(ctx context.Context, role models.UserRole, l
 }
 
 // ListByTeam retrieves users in a specific team with pagination
-func (r *UserRepository) ListByTeam(ctx context.Context, team string, limit, offset int) ([]*models.MongoUser, error) {
+func (r *MongoUserRepository) ListByTeam(ctx context.Context, team string, limit, offset int) ([]*models.MongoUser, error) {
 	filter := bson.M{"team": team}
 
 	opts := options.Find().
@@ -236,7 +236,7 @@ func (r *UserRepository) ListByTeam(ctx context.Context, team string, limit, off
 }
 
 // Delete removes a user by ID (soft delete recommended in production)
-func (r *UserRepository) Delete(ctx context.Context, id primitive.ObjectID) error {
+func (r *MongoUserRepository) Delete(ctx context.Context, id primitive.ObjectID) error {
 	filter := bson.M{"_id": id}
 
 	result, err := r.collection.DeleteOne(ctx, filter)
@@ -252,7 +252,7 @@ func (r *UserRepository) Delete(ctx context.Context, id primitive.ObjectID) erro
 }
 
 // Count returns the total number of users (optionally filtered by region)
-func (r *UserRepository) Count(ctx context.Context, region string) (int64, error) {
+func (r *MongoUserRepository) Count(ctx context.Context, region string) (int64, error) {
 	filter := bson.M{}
 	if region != "" {
 		filter["region"] = region
@@ -266,7 +266,7 @@ func (r *UserRepository) Count(ctx context.Context, region string) (int64, error
 }
 
 // UpdateLastLogin updates the last login timestamp
-func (r *UserRepository) UpdateLastLogin(ctx context.Context, userID primitive.ObjectID, loginTime time.Time) error {
+func (r *MongoUserRepository) UpdateLastLogin(ctx context.Context, userID primitive.ObjectID, loginTime time.Time) error {
 	filter := bson.M{"_id": userID}
 	update := bson.M{
 		"$set": bson.M{
@@ -288,7 +288,7 @@ func (r *UserRepository) UpdateLastLogin(ctx context.Context, userID primitive.O
 }
 
 // ActivateUser activates a user account
-func (r *UserRepository) ActivateUser(ctx context.Context, userID primitive.ObjectID) error {
+func (r *MongoUserRepository) ActivateUser(ctx context.Context, userID primitive.ObjectID) error {
 	filter := bson.M{"_id": userID}
 	update := bson.M{
 		"$set": bson.M{
@@ -310,7 +310,7 @@ func (r *UserRepository) ActivateUser(ctx context.Context, userID primitive.Obje
 }
 
 // DeactivateUser deactivates a user account
-func (r *UserRepository) DeactivateUser(ctx context.Context, userID primitive.ObjectID) error {
+func (r *MongoUserRepository) DeactivateUser(ctx context.Context, userID primitive.ObjectID) error {
 	filter := bson.M{"_id": userID}
 	update := bson.M{
 		"$set": bson.M{
@@ -332,7 +332,7 @@ func (r *UserRepository) DeactivateUser(ctx context.Context, userID primitive.Ob
 }
 
 // GetAllUsers retrieves all users with pagination (from UserManagementRepository)
-func (r *UserRepository) GetAllUsers(ctx context.Context, limit, offset int) ([]*models.MongoUser, error) {
+func (r *MongoUserRepository) GetAllUsers(ctx context.Context, limit, offset int) ([]*models.MongoUser, error) {
 	opts := options.Find().
 		SetLimit(int64(limit)).
 		SetSkip(int64(offset)).
@@ -353,17 +353,17 @@ func (r *UserRepository) GetAllUsers(ctx context.Context, limit, offset int) ([]
 }
 
 // GetUsersByRole retrieves users by role (from UserManagementRepository)
-func (r *UserRepository) GetUsersByRole(ctx context.Context, role models.UserRole, limit, offset int) ([]*models.MongoUser, error) {
+func (r *MongoUserRepository) GetUsersByRole(ctx context.Context, role models.UserRole, limit, offset int) ([]*models.MongoUser, error) {
 	return r.ListByRole(ctx, role, limit, offset)
 }
 
 // GetUsersByTeam retrieves users by team (from UserManagementRepository)
-func (r *UserRepository) GetUsersByTeam(ctx context.Context, team string, limit, offset int) ([]*models.MongoUser, error) {
+func (r *MongoUserRepository) GetUsersByTeam(ctx context.Context, team string, limit, offset int) ([]*models.MongoUser, error) {
 	return r.ListByTeam(ctx, team, limit, offset)
 }
 
 // UpdateUserProfile updates user profile information (name, email) from UserSettingsRepository
-func (r *UserRepository) UpdateUserProfile(ctx context.Context, userID primitive.ObjectID, name, email string) error {
+func (r *MongoUserRepository) UpdateUserProfile(ctx context.Context, userID primitive.ObjectID, name, email string) error {
 	filter := bson.M{"_id": userID}
 	update := bson.M{
 		"$set": bson.M{
@@ -386,7 +386,7 @@ func (r *UserRepository) UpdateUserProfile(ctx context.Context, userID primitive
 }
 
 // EnsureIndexes creates the required indexes for the users collection
-func (r *UserRepository) EnsureIndexes(ctx context.Context) error {
+func (r *MongoUserRepository) EnsureIndexes(ctx context.Context) error {
 	indexes := []mongo.IndexModel{
 		{
 			Keys:    bson.D{{Key: "email", Value: 1}},
@@ -419,9 +419,9 @@ func (r *UserRepository) EnsureIndexes(ctx context.Context) error {
 // ============================================================================
 
 // GetByIDCompat retrieves a user by ID (service layer compatibility - returns models.User)
-func (r *UserRepository) GetByIDCompat(id primitive.ObjectID) (*models.User, error) {
+func (r *MongoUserRepository) GetByIDCompat(id primitive.ObjectID) (*models.User, error) {
 	ctx := context.Background()
-	mongoUser, err := r.GetByID(ctx,id)
+	mongoUser, err := r.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -429,7 +429,7 @@ func (r *UserRepository) GetByIDCompat(id primitive.ObjectID) (*models.User, err
 }
 
 // GetByEmailCompat retrieves a user by email (service layer compatibility - returns models.User)
-func (r *UserRepository) GetByEmailCompat(email string) (*models.User, error) {
+func (r *MongoUserRepository) GetByEmailCompat(email string) (*models.User, error) {
 	ctx := context.Background()
 	mongoUser, err := r.GetByEmail(ctx, email)
 	if err != nil {
@@ -439,13 +439,13 @@ func (r *UserRepository) GetByEmailCompat(email string) (*models.User, error) {
 }
 
 // UpdateLastLoginCompat updates the last login timestamp (service layer compatibility)
-func (r *UserRepository) UpdateLastLoginCompat(userID primitive.ObjectID, loginTime time.Time) error {
+func (r *MongoUserRepository) UpdateLastLoginCompat(userID primitive.ObjectID, loginTime time.Time) error {
 	ctx := context.Background()
 	return r.UpdateLastLogin(ctx, userID, loginTime)
 }
 
 // UpdatePasswordCompat updates the password hash (service layer compatibility)
-func (r *UserRepository) UpdatePasswordCompat(userID primitive.ObjectID, passwordHash string) error {
+func (r *MongoUserRepository) UpdatePasswordCompat(userID primitive.ObjectID, passwordHash string) error {
 	ctx := context.Background()
 	return r.UpdatePassword(ctx, userID, passwordHash)
 }
@@ -455,9 +455,9 @@ func (r *UserRepository) UpdatePasswordCompat(userID primitive.ObjectID, passwor
 // ============================================================================
 
 // CreateSession creates a new session in MongoDB
-func (r *UserRepository) CreateSession(ctx context.Context, session *models.Session) error {
+func (r *MongoUserRepository) CreateSession(ctx context.Context, session *models.Session) error {
 	collection := r.client.Collection("sessions")
-	_ , err := collection.InsertOne(ctx, session)
+	_, err := collection.InsertOne(ctx, session)
 	if err != nil {
 		return fmt.Errorf("error creating session: %w", err)
 	}
@@ -465,20 +465,20 @@ func (r *UserRepository) CreateSession(ctx context.Context, session *models.Sess
 }
 
 // CreateSessionCompat creates a new session (service layer compatibility - no context)
-func (r *UserRepository) CreateSessionCompat(session models.Session) error {
+func (r *MongoUserRepository) CreateSessionCompat(session models.Session) error {
 	ctx := context.Background()
 	return r.CreateSession(ctx, &session)
 }
 
-//GetByRefreshToken retrieves a session by refresh token
-func (r *UserRepository) GetByRefreshToken(refreshToken string) (*models.Session,error) {
+// GetByRefreshToken retrieves a session by refresh token
+func (r *MongoUserRepository) GetByRefreshToken(refreshToken string) (*models.Session, error) {
 	ctx := context.Background()
 	collection := r.client.Collection("sessions")
 	var session models.Session
 
 	filter := bson.M{
 		"refresh_token": refreshToken,
-	 }
+	}
 
 	err := collection.FindOne(ctx, filter).Decode(&session)
 	if err != nil {
@@ -487,11 +487,11 @@ func (r *UserRepository) GetByRefreshToken(refreshToken string) (*models.Session
 		}
 		return nil, fmt.Errorf("error finding session: %w", err)
 	}
-	return  &session, nil
+	return &session, nil
 }
 
 // Revoke revokes a session by marking it as revoked
-func (r *UserRepository) Revoke(refreshToken string) error {
+func (r *MongoUserRepository) Revoke(refreshToken string) error {
 	ctx := context.Background()
 	collection := r.client.Collection("sessions")
 
@@ -518,9 +518,8 @@ func (r *UserRepository) Revoke(refreshToken string) error {
 // PASSWORD RESET METHODS (PasswordResetRepository compatibility)
 // ============================================================================
 
-
 // CreatePasswordReset creates a new password reset token in MongoDB
-func (r *UserRepository) CreatePasswordReset(ctx context.Context, reset *models.PasswordReset) error {
+func (r *MongoUserRepository) CreatePasswordReset(ctx context.Context, reset *models.PasswordReset) error {
 	collection := r.client.Collection("password_resets")
 	_, err := collection.InsertOne(ctx, reset)
 	if err != nil {
@@ -531,21 +530,21 @@ func (r *UserRepository) CreatePasswordReset(ctx context.Context, reset *models.
 
 // Create creates a new password reset (service layer compatibility - no context)
 // Note: This method name conflicts with session Create, but Go allows it for different types
-func (r *UserRepository) CreateReset(reset models.PasswordReset) error {
+func (r *MongoUserRepository) CreateReset(reset models.PasswordReset) error {
 	ctx := context.Background()
 	return r.CreatePasswordReset(ctx, &reset)
 }
 
 // GetByToken retrieves a password reset by token
-func (r *UserRepository) GetByToken(token string) (*models.PasswordReset, error) {
+func (r *MongoUserRepository) GetByToken(token primitive.ObjectID) (*models.PasswordReset, error) {
 	ctx := context.Background()
-	collection := r.client.Collection("password_resets");
+	collection := r.client.Collection("password_resets")
 
 	var reset models.PasswordReset
-	filter :=bson.M{
-		"reset_token":token,
+	filter := bson.M{
+		"reset_token": token,
 	}
-	 err := collection.FindOne(ctx, filter).Decode(&reset)
+	err := collection.FindOne(ctx, filter).Decode(&reset)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, WrapNotFound(mongo.ErrNoDocuments, fmt.Errorf("password reset not found"))
@@ -554,10 +553,10 @@ func (r *UserRepository) GetByToken(token string) (*models.PasswordReset, error)
 	}
 
 	return &reset, nil
-}	
+}
 
 // MarkAsUsed marks a password reset token as used
-func (r *UserRepository) MarkAsUsed(resetToken primitive.ObjectID) error {
+func (r *MongoUserRepository) MarkAsUsed(resetToken primitive.ObjectID) error {
 	ctx := context.Background()
 	collection := r.client.Collection("password_resets")
 
@@ -580,13 +579,12 @@ func (r *UserRepository) MarkAsUsed(resetToken primitive.ObjectID) error {
 	return nil
 }
 
-
 // =============================================================================
 // USER MANAGEMENT SERVICE LAYER COMPATIBILITY METHODS
 // =============================================================================
 
 // GetAllUsersCompat retrieves all users with a limit (service layer compatibility)
-func (r *UserRepository) GetAllUsersCompat(limit int) ([]*models.User, error) {
+func (r *MongoUserRepository) GetAllUsersCompat(limit int) ([]*models.User, error) {
 	ctx := context.Background()
 	mongoUsers, err := r.GetAllUsers(ctx, limit, 0)
 	if err != nil {
@@ -601,7 +599,7 @@ func (r *UserRepository) GetAllUsersCompat(limit int) ([]*models.User, error) {
 }
 
 // GetUsersByTeamCompat retrieves users by team (service layer compatibility)
-func (r *UserRepository) GetUsersByTeamCompat(team string, limit int) ([]*models.User, error) {
+func (r *MongoUserRepository) GetUsersByTeamCompat(team string, limit int) ([]*models.User, error) {
 	ctx := context.Background()
 	collection := r.client.Collection("users")
 
@@ -628,7 +626,7 @@ func (r *UserRepository) GetUsersByTeamCompat(team string, limit int) ([]*models
 }
 
 // CreateCompat creates a user (service layer compatibility)
-func (r *UserRepository) CreateCompat(user *models.User) error {
+func (r *MongoUserRepository) CreateCompat(user *models.User) error {
 	ctx := context.Background()
 	// Convert User to MongoUser for storage
 	mongoUser := &models.MongoUser{
@@ -647,7 +645,7 @@ func (r *UserRepository) CreateCompat(user *models.User) error {
 }
 
 // UpdateCompat updates a user (service layer compatibility)
-func (r *UserRepository) UpdateCompat(user *models.User) error {
+func (r *MongoUserRepository) UpdateCompat(user *models.User) error {
 	ctx := context.Background()
 	// Convert User to MongoUser for storage
 	mongoUser := &models.MongoUser{
@@ -666,7 +664,7 @@ func (r *UserRepository) UpdateCompat(user *models.User) error {
 }
 
 // LogActivity logs user activity (service layer compatibility)
-func (r *UserRepository) LogActivity(activity *models.UserActivityLog) error {
+func (r *MongoUserRepository) LogActivity(activity *models.UserActivityLog) error {
 	ctx := context.Background()
 	collection := r.client.Collection("user_activity_logs")
 
@@ -685,7 +683,7 @@ func (r *UserRepository) LogActivity(activity *models.UserActivityLog) error {
 }
 
 // GetUserActivities retrieves user activities (service layer compatibility)
-func (r *UserRepository) GetUserActivities(userID primitive.ObjectID, limit int) ([]*models.UserActivityLog, error) {
+func (r *MongoUserRepository) GetUserActivities(userID primitive.ObjectID, limit int) ([]*models.UserActivityLog, error) {
 	ctx := context.Background()
 	collection := r.client.Collection("user_activity_logs")
 
@@ -713,7 +711,7 @@ func (r *UserRepository) GetUserActivities(userID primitive.ObjectID, limit int)
 // =============================================================================
 
 // GetUserSessions retrieves all active sessions for a user
-func (r *UserRepository) GetUserSessions(userID primitive.ObjectID) ([]models.Session, error) {
+func (r *MongoUserRepository) GetUserSessions(userID primitive.ObjectID) ([]models.Session, error) {
 	ctx := context.Background()
 	collection := r.client.Collection("sessions")
 
@@ -738,7 +736,7 @@ func (r *UserRepository) GetUserSessions(userID primitive.ObjectID) ([]models.Se
 }
 
 // GetSession retrieves a session by ID
-func (r *UserRepository) GetSession(sessionID primitive.ObjectID) (*models.Session, error) {
+func (r *MongoUserRepository) GetSession(sessionID primitive.ObjectID) (*models.Session, error) {
 	ctx := context.Background()
 	collection := r.client.Collection("sessions")
 
@@ -756,7 +754,7 @@ func (r *UserRepository) GetSession(sessionID primitive.ObjectID) (*models.Sessi
 }
 
 // TerminateSession terminates a session by marking it as revoked
-func (r *UserRepository) TerminateSession(sessionID primitive.ObjectID) error {
+func (r *MongoUserRepository) TerminateSession(sessionID primitive.ObjectID) error {
 	ctx := context.Background()
 	collection := r.client.Collection("sessions")
 
@@ -781,7 +779,7 @@ func (r *UserRepository) TerminateSession(sessionID primitive.ObjectID) error {
 }
 
 // RefreshSession refreshes a session with new expiry time
-func (r *UserRepository) RefreshSession(sessionID primitive.ObjectID, newExpiry time.Time) error {
+func (r *MongoUserRepository) RefreshSession(sessionID primitive.ObjectID, newExpiry time.Time) error {
 	ctx := context.Background()
 	collection := r.client.Collection("sessions")
 
@@ -802,33 +800,33 @@ func (r *UserRepository) RefreshSession(sessionID primitive.ObjectID, newExpiry 
 }
 
 // ListUsers lists all users with pagination - stub for handler compatibility
-func (r *UserRepository) ListUsers(limit, offset int) ([]*models.MongoUser, error) {
+func (r *MongoUserRepository) ListUsers(limit, offset int) ([]*models.MongoUser, error) {
 	ctx := context.Background()
 	return r.GetAllUsers(ctx, limit, offset)
 }
 
 // GetByIDForHandler gets a user by ID (no context) - returns MongoUser
-func (r *UserRepository) GetByIDForHandler(id primitive.ObjectID) (*models.MongoUser, error) {
+func (r *MongoUserRepository) GetByIDForHandler(id primitive.ObjectID) (*models.MongoUser, error) {
 	return r.GetByID(context.Background(), id)
 }
 
 // GetByEmailForHandler gets a user by email (no context)
-func (r *UserRepository) GetByEmailForHandler(email string) (*models.MongoUser, error) {
+func (r *MongoUserRepository) GetByEmailForHandler(email string) (*models.MongoUser, error) {
 	return r.GetByEmail(context.Background(), email)
 }
 
 // CreateForHandler creates a user (no context)
-func (r *UserRepository) CreateForHandler(user *models.MongoUser) error {
+func (r *MongoUserRepository) CreateForHandler(user *models.MongoUser) error {
 	return r.Create(context.Background(), user)
 }
 
 // UpdateForHandler updates a user (no context)
-func (r *UserRepository) UpdateForHandler(user *models.MongoUser) error {
+func (r *MongoUserRepository) UpdateForHandler(user *models.MongoUser) error {
 	return r.Update(context.Background(), user)
 }
 
 // ListUsersFiltered lists users with filters (handler compatibility)
-func (r *UserRepository) ListUsersFiltered(role, region string, isActive *bool, limit, offset int) ([]*models.MongoUser, error) {
+func (r *MongoUserRepository) ListUsersFiltered(role, region string, isActive *bool, limit, offset int) ([]*models.MongoUser, error) {
 	ctx := context.Background()
 	filter := bson.M{}
 
@@ -862,12 +860,12 @@ func (r *UserRepository) ListUsersFiltered(role, region string, isActive *bool, 
 }
 
 // ActivateUserForHandler activates a user (no context)
-func (r *UserRepository) ActivateUserForHandler(userID primitive.ObjectID) error {
+func (r *MongoUserRepository) ActivateUserForHandler(userID primitive.ObjectID) error {
 	return r.ActivateUser(context.Background(), userID)
 }
 
 // DeactivateUserForHandler deactivates a user (no context)
-func (r *UserRepository) DeactivateUserForHandler(userID primitive.ObjectID) error {
+func (r *MongoUserRepository) DeactivateUserForHandler(userID primitive.ObjectID) error {
 	return r.DeactivateUser(context.Background(), userID)
 }
 
@@ -876,7 +874,7 @@ func (r *UserRepository) DeactivateUserForHandler(userID primitive.ObjectID) err
 // =============================================================================
 
 // GetUserSettings retrieves user settings including profile and preferences
-func (r *UserRepository) GetUserSettings(userID primitive.ObjectID) (*models.UserSettings, error) {
+func (r *MongoUserRepository) GetUserSettings(userID primitive.ObjectID) (*models.UserSettings, error) {
 	user, err := r.GetByID(context.Background(), userID)
 	if err != nil {
 		return nil, err
@@ -924,17 +922,17 @@ func (r *UserRepository) GetUserSettings(userID primitive.ObjectID) (*models.Use
 }
 
 // GetUserByID retrieves a user by ID (handler compatibility - no context)
-func (r *UserRepository) GetUserByID(userID primitive.ObjectID) (*models.MongoUser, error) {
+func (r *MongoUserRepository) GetUserByID(userID primitive.ObjectID) (*models.MongoUser, error) {
 	return r.GetByID(context.Background(), userID)
 }
 
 // UpdateUserProfileForHandler updates user profile (handler compatibility - no context)
-func (r *UserRepository) UpdateUserProfileForHandler(userID primitive.ObjectID, name, email string) error {
+func (r *MongoUserRepository) UpdateUserProfileForHandler(userID primitive.ObjectID, name, email string) error {
 	return r.UpdateUserProfile(context.Background(), userID, name, email)
 }
 
 // UpdatePreferencesForHandler updates user preferences (handler compatibility)
-func (r *UserRepository) UpdatePreferences(prefs *models.UserPreferences) error {
+func (r *MongoUserRepository) UpdatePreferences(prefs *models.UserPreferences) error {
 	ctx := context.Background()
 	filter := bson.M{"_id": prefs.UserID}
 	update := bson.M{
