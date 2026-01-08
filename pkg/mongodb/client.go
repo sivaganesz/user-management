@@ -133,6 +133,30 @@ func NewClient(config Config) (*Client, error) {
 	}, nil
 }
 
+// Close gracefully disconnects the MongoDB client
+func (c *Client) Close() error {
+	if c.Client == nil {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err := c.Client.Disconnect(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to disconnect MongoDB client: %w", err)
+	}
+
+	fmt.Println("MongoDB client disconnected successfully")
+	return nil
+}
+
+// Database returns the database handle
+func (c *Client) Database() *mongo.Database {
+	return c.DB
+}
+
+
 // Ping performs a simple ping to check if the connection is alive
 func (c *Client) Ping() error {
 	if c.Client == nil {
