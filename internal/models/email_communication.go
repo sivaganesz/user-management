@@ -86,9 +86,7 @@ type CommunicationChannel string
 
 const (
 	CommunicationChannelEmail    CommunicationChannel = "email"
-	CommunicationChannelSMS      CommunicationChannel = "sms"
 	CommunicationChannelWhatsApp CommunicationChannel = "whatsapp"
-	CommunicationChannelLinkedIn CommunicationChannel = "linkedin"
 )
 
 // CommunicationDirection represents the direction of communication
@@ -116,9 +114,7 @@ const (
 func IsValidCommunicationChannel(channel string) bool {
 	validChannels := []CommunicationChannel{
 		CommunicationChannelEmail,
-		CommunicationChannelSMS,
 		CommunicationChannelWhatsApp,
-		CommunicationChannelLinkedIn,
 	}
 
 	for _, validChannel := range validChannels {

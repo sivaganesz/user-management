@@ -6,6 +6,22 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+// Communication channels
+const (
+	ChannelEmail    = "email"
+	ChannelSMS      = "sms"
+	ChannelWhatsApp = "whatsapp"
+	ChannelLinkedIn = "linkedin"
+	ChannelCall     = "call"
+	ChannelChat     = "chat"
+)
+
+// Message directions
+const (
+	DirectionInbound  = "inbound"
+	DirectionOutbound = "outbound"
+)
+
 // Message status
 const (
 	MessageStatusDraft     = "draft"
@@ -14,6 +30,85 @@ const (
 	MessageStatusDelivered = "delivered"
 	MessageStatusFailed    = "failed"
 	MessageStatusBounced   = "bounced"
+)
+
+// Message priority
+const (
+	PriorityLow    = "low"
+	PriorityNormal = "normal"
+	PriorityHigh   = "high"
+	PriorityUrgent = "urgent"
+)
+
+// Account types
+const (
+	AccountTypePersonal = "personal"
+	AccountTypeShared   = "shared"
+	AccountTypeSystem   = "system"
+)
+
+// Email providers
+const (
+	ProviderGmail     = "gmail"
+	ProviderOutlook   = "outlook"
+	ProviderOffice365 = "office365"
+	ProviderCustom    = "custom"
+)
+
+// Sync status
+const (
+	SyncStatusIdle    = "idle"
+	SyncStatusSyncing = "syncing"
+	SyncStatusError   = "error"
+)
+
+// Call status
+const (
+	CallStatusInitiated = "initiated"
+	CallStatusRinging   = "ringing"
+	CallStatusAnswered  = "answered"
+	CallStatusCompleted = "completed"
+	CallStatusMissed    = "missed"
+	CallStatusFailed    = "failed"
+	CallStatusBusy      = "busy"
+)
+
+// Tracking events
+const (
+	TrackingEventOpened     = "opened"
+	TrackingEventClicked    = "clicked"
+	TrackingEventBounced    = "bounced"
+	TrackingEventComplained = "complained"
+)
+
+// SMS status constants
+const (
+	SMSStatusQueued      = "queued"
+	SMSStatusSent        = "sent"
+	SMSStatusDelivered   = "delivered"
+	SMSStatusFailed      = "failed"
+	SMSStatusUndelivered = "undelivered"
+)
+
+// Scheduled message status
+const (
+	ScheduledStatusPending    = "pending"
+	ScheduledStatusProcessing = "processing"
+	ScheduledStatusSent       = "sent"
+	ScheduledStatusCancelled  = "cancelled"
+	ScheduledStatusFailed     = "failed"
+)
+
+// Recipient status
+const (
+	RecipientStatusPending      = "pending"
+	RecipientStatusSent         = "sent"
+	RecipientStatusDelivered    = "delivered"
+	RecipientStatusOpened       = "opened"
+	RecipientStatusClicked      = "clicked"
+	RecipientStatusBounced      = "bounced"
+	RecipientStatusFailed       = "failed"
+	RecipientStatusUnsubscribed = "unsubscribed"
 )
 
 // EmailAccount represents an email account configuration
@@ -129,3 +224,23 @@ type MessageThread struct {
 	CreatedAt            time.Time            `json:"created_at"`
 	UpdatedAt            time.Time            `json:"updated_at"`
 }
+
+// CommMessageThread is an alias for MessageThread (for consistency in communication repo)
+type CommMessageThread = MessageThread
+
+// MessageAttachment represents a file attachment
+type MessageAttachment struct {
+	AttachmentID    primitive.ObjectID `json:"attachment_id"`
+	MessageID       primitive.ObjectID `json:"message_id"`
+	FileName        string             `json:"file_name"`
+	FileSizeBytes   int64              `json:"file_size_bytes"`
+	MimeType        string             `json:"mime_type"`
+	ContentID       string             `json:"content_id,omitempty"`
+	StorageLocation string             `json:"storage_location"`
+	IsInline        bool               `json:"is_inline"`
+	DownloadCount   int                `json:"download_count"`
+	CreatedAt       time.Time          `json:"created_at"`
+}
+
+// CommMessageAttachment is an alias for MessageAttachment (for consistency in communication repo)
+type CommMessageAttachment = MessageAttachment
