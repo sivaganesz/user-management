@@ -755,3 +755,78 @@ func (h *AuthHandler) publishLogoutEvent(user *models.User, ipAddress, userAgent
 		println("Failed to publish logout event:", err.Error())
 	}
 }
+
+
+type InviteUserRequest struct {
+	Email       string   `json:"email"`
+	Name        string   `json:"name"`
+	Password    string   `json:"password"`
+	Role        string   `json:"role"`
+	Region      string   `json:"region"`
+	Team        string   `json:"team"`
+	Permissions []string `json:"permissions"`
+}
+// @Security BearerAuth
+func (h *AuthHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	// Verify user is authenticated
+	// invitedBy, ok := getUserIDFromContextUser(r.Context())
+	// if !ok {
+	// 	respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+	// 	return
+	// }
+
+	// Parse request body
+	var req InviteUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+
+	// Validate required fields
+	if req.Email == "" {
+		respondWithError(w, http.StatusBadRequest, "Email is required")
+		return
+	}
+
+	if req.Name == "" {
+		respondWithError(w, http.StatusBadRequest, "Name is required")
+		return
+	}
+
+	if req.Role == "" {
+		respondWithError(w, http.StatusBadRequest, "Role is required")
+		return
+	}
+
+	// // Check if user with email already exists
+	// existingUser, err := h.userRepo.GetByEmailForHandler(req.Email)
+	// if err == nil && existingUser != nil {
+	// 	respondWithError(w, http.StatusConflict, "User with this email already exists")
+	// 	return
+	// }
+
+	// Create new user (inactive by default, pending activation)
+	newUser := &models.MongoUser{
+		ID:          primitive.NewObjectID(),
+		Email:       req.Email,
+		PasswordHash:req.Password,
+		Name:        req.Name,
+		Role:        models.UserRole(req.Role),
+		Region:      req.Region,
+		Team:        req.Team,
+		Permissions: req.Permissions,
+		IsActive:    true, // User is inactive until they verify email
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	// Call repository
+	if err := h.authService.CreateForHandler(newUser); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to create user invitation")
+		return
+	}
+	// Convert to safe user profile
+	profile := newUser.ToProfile1()
+
+	respondWithJSON(w, http.StatusCreated, profile)
+}

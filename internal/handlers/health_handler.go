@@ -19,7 +19,7 @@ type HealthCheck struct {
 }
 func GetOverallHealth(w http.ResponseWriter, r *http.Request) {
 	response := HealthResponse{
-		Service: "csa-backend-api",
+		Service: "white-backend-api",
 		Version: "1.0.0",
 		Checks:  make(map[string]HealthCheck),
 	}

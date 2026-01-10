@@ -328,3 +328,11 @@ func (s *AuthService) CreateSessionForUser(user *models.User, ipAddress, userAge
 
 	return tokens, nil
 }
+
+func (s *AuthService) CreateForHandler(user *models.MongoUser) error {
+	// Create user in database
+	if err := s.userRepo.CreateForHandler(user); err != nil {
+		return fmt.Errorf("failed to create user: %v", err)
+	}
+	return nil
+}

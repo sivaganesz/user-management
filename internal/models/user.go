@@ -146,6 +146,17 @@ func (m *MongoUser) ToUser() *User {
 }
 
 // ToProfile converts a User to a UserProfile (safe for API responses)
+func (u *MongoUser) ToProfile1() UserProfile {
+	return UserProfile{
+		ID:          u.ID,
+		Email:       u.Email,
+		Name:        u.Name,
+		Role:        string(u.Role),
+		Region:      u.Region,
+		Team:        u.Team,
+		Permissions: u.Permissions,
+	}
+}
 func (u *User) ToProfile() UserProfile {
 	return UserProfile{
 		ID:          u.ID,
