@@ -1,0 +1,21 @@
+{
+    "go.toolsManagement.autoUpdate": false,
+    "go.useLanguageServer": true,
+    "go.alternateTools": {
+        "dlv": "/home/sivaganesz/go/bin/dlv"
+    },
+    "go.buildFlags": [
+        "-gcflags=all=-N -l"
+    ],
+    "go.delveConfig": {
+        "dlvLoadConfig": {
+            "followPointers": true,
+            "maxVariableRecurse": 1,
+            "maxStringLen": 120,
+            "maxArrayValues": 64,
+            "maxStructFields": -1
+        },
+        "apiVersion": 2,
+        "showGlobalVariables": false
+    }
+}

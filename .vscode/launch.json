@@ -1,0 +1,30 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug API Server",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/cmd/api/main.go",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "GOTOOLCHAIN": "go1.25.4"
+            },
+            "args": []
+        },
+        {
+            "name": "Debug API Server (with .env)",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/cmd/api/main.go",
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env",
+            "env": {
+                "GOTOOLCHAIN": "go1.25.4"
+            },
+            "args": []
+        }
+    ]
+}
