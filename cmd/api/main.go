@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -16,7 +17,12 @@ import (
 	"github.com/white/user-management/config"
 	"github.com/white/user-management/internal/handlers"
 	"github.com/white/user-management/internal/middleware"
+	// "github.com/white/user-management/internal/repositories"
+	// "github.com/white/user-management/internal/services"
 	"github.com/white/user-management/internal/utils"
+	"github.com/white/user-management/pkg/kafka"
+	"github.com/white/user-management/pkg/mongodb"
+	"github.com/white/user-management/pkg/smtp"
 )
 
 func main() {
@@ -24,6 +30,100 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found")
 	}
+
+	mongoURI := os.Getenv("MONGODB_URL")
+	if mongoURI == "" {
+		log.Fatal("FATAL: MONGODB_URI environment variable is required but not set. Please configure MongoDB connection.")
+	}
+
+	log.Printf("Connecting to MongoDB...")
+	// Initialize MongoDB client
+	mongoConfig := mongodb.Config{
+		URI: mongoURI,
+		Database: getEnvWithDefault("MONGODB_DATABASE", "white-dev"),
+		MaxPoolSize: uint64(getEnvIntWithDefault("MONGODB_MAX_POOL_SIZE", 100)),
+		MinPoolSize: uint64(getEnvIntWithDefault("MONGODB_MIN_POOL_SIZE", 10)),
+		MaxRetries:  getEnvIntWithDefault("MONGODB_MAX_RETRIES", 5),	
+	}
+
+	mongoClient, err := mongodb.NewClient(mongoConfig)
+	if err != nil {
+		log.Fatalf("FATAL: Failed to connect to MongoDB: %v. Application cannot start without database.", err)
+	}
+	defer mongoClient.Close()
+	log.Println("Successfully connected to MongoDB")
+
+
+	// Initialize Kafka producer (optional - gracefully handle if not available)
+	var kafkaProducer *kafka.Producer
+
+	// Load Kafka configuration from environment
+	kafkaBrokers := os.Getenv("KAFKA_BROKERS")
+	if kafkaBrokers == "" {
+		kafkaBrokers = "localhost:9092" // Default for local development
+	}
+
+	kafkaConfig := config.KafkaConfig{
+		Brokers:       []string{kafkaBrokers},
+		ClientID:      getEnvWithDefault("KAFKA_CLIENT_ID", "white-backend-producer"),
+		Username:      os.Getenv("KAFKA_USER_NAME"),
+		Password:      os.Getenv("KAFKA_PASSWORD"),
+		SSL:           os.Getenv("KAFKA_SSL") == "true",
+		SASLMechanism: getEnvWithDefault("KAFKA_SASL_MECHANISM", "plain"),
+	}
+
+	kafkaProducer, err = kafka.NewProducer(kafkaConfig)
+	if err != nil {
+		log.Printf("Warning: Kafka producer not available: %v. Events will not be published.", err)
+		kafkaProducer = nil // Set to nil so handlers can check
+	} else {
+		log.Println("Connected to Kafka Producer")
+		defer kafkaProducer.Close()
+	}
+
+	// Initialize SMTP client for email sending (Office 365 or other SMTP servers)
+	var smtpClient *smtp.SMTPClient
+	smtpHost := os.Getenv("SMTP_HOST")
+	if smtpHost != "" {
+		var err error
+		smtpClient, err = smtp.NewSMTPClientFromEnv()
+		if err != nil {
+			log.Printf("Warning: SMTP client initialization failed: %v. SMTP email will not be available.", err)
+			smtpClient = nil
+		} else {
+			log.Printf("SMTP email client initialized (host: %s, from: %s)", smtpHost, smtpClient.GetFromEmail())
+		}
+	} else {
+		log.Println("Warning: SMTP_HOST not configured. SMTP email will not be available.")
+	}
+
+	
+	// =====================================================
+	// MONGODB REPOSITORIES
+	// =====================================================
+	// Initialize MongoDB repositories (MongoDB-based)
+
+	// mongoUserRepo := repositories.NewMongoUserRepository(mongoClient)
+	// Settings repository (User Settings, Company Settings, Notifications, Audit Logs)
+	// settingsRepo := repositories.NewSettingsRepository(mongoClient)
+	// log.Println("MongoDB repositories initialized (all modules including Phase 3)")
+	// emailRepo := repositories.NewMongoEmailRepository(mongoClient)
+
+	// =====================================================
+	// COMMENTED OUT: Legacy services (removed)
+	// =====================================================
+
+	// emailThreadingService := services.NewEmailThreadingService(emailRepo)
+	// Event Publisher Service (Communications Hub - Kafka Event Publishing)
+	// _ = services.NewEventPublisher(kafkaProducer)
+	// log.Println("Event publisher service initialized")
+
+
+	// =====================================================
+	// MONGODB HANDLERS (TASK GROUP 1: MongoDB Migration Complete)
+	// =====================================================
+	// Initialize MongoDB handlers (using MongoDB repositories)
+
 
 	// Initialize router
 	router := mux.NewRouter()
@@ -76,7 +176,7 @@ func main() {
 			Environment: "development",
 		},
 	}
-
+	
 	// Initialize JWT service
 	jwtService, err := utils.NewJWTService(cfg.JWT)
 	if err != nil {
@@ -101,6 +201,23 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// =====================================================
+	// Authentication Routes (MongoDB-based)
+	// =====================================================
+	authHandler := handlers.NewAuthHandler(mongoClient,cfg, kafkaProducer)
+	// authHandler.SetAuditPublisher(auditPublisher)
+	api.HandleFunc("/auth/login", authHandler.Login).Methods("POST", "OPTIONS")
+	api.HandleFunc("/auth/verify-2fa", authHandler.Verify2FA).Methods("POST", "OPTIONS")
+	api.HandleFunc("/auth/logout", authHandler.Logout).Methods("POST", "OPTIONS")
+	api.HandleFunc("/auth/refresh", authHandler.RefreshToken).Methods("POST", "OPTIONS")
+	api.HandleFunc("/auth/password/change", authHandler.ChangePassword).Methods("POST", "OPTIONS")
+	api.HandleFunc("/auth/password/forgot", authHandler.ForgotPassword).Methods("POST", "OPTIONS")
+	api.HandleFunc("/auth/password/reset", authHandler.ResetPassword).Methods("POST", "OPTIONS")
+
+	api.HandleFunc("/create/new-user", authHandler.CreateUser).Methods("POST", "OPTIONS")
+
+
+
 	// Start server
 	go func() {
 		log.Printf("Server running on %s", srv.Addr)
@@ -124,6 +241,22 @@ func main() {
 	}
 
 	log.Println("Server stopped")
+}
+
+// getEnvIntWithDefault gets an environment variable as int or returns a default value
+func getEnvIntWithDefault(key string, defaultValue int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+
+	intValue := 0
+	_, err := fmt.Sscanf(value, "%d", &intValue)
+	if err != nil {
+		log.Printf("Warning: Invalid integer value for %s: %v, using default: %d", key, value, defaultValue)
+		return defaultValue
+	}
+	return intValue
 }
 
 // getEnvWithDefault returns an environment variable or a default value.
