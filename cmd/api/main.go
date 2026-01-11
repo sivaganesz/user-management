@@ -214,8 +214,11 @@ func main() {
 	api.HandleFunc("/auth/password/forgot", authHandler.ForgotPassword).Methods("POST", "OPTIONS")
 	api.HandleFunc("/auth/password/reset", authHandler.ResetPassword).Methods("POST", "OPTIONS")
 
-	api.HandleFunc("/create/new-user", authHandler.CreateUser).Methods("POST", "OPTIONS")
+	// api.HandleFunc("/create/new-user", authHandler.CreateUser).Methods("POST", "OPTIONS")
 
+	teamHandler := handlers.NewTeamHandler(mongoClient, smtpClient, kafkaProducer)
+	api.Handle("/team/members", authMiddleware(http.HandlerFunc(teamHandler.ListTeamMembers))).Methods("GET", "OPTIONS")
+	api.Handle("/team/members/{id}", authMiddleware(http.HandlerFunc(teamHandler.GetTeamMember))).Methods("GET", "OPTIONS")
 
 
 	// Start server
