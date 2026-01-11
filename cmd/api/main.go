@@ -219,6 +219,7 @@ func main() {
 	teamHandler := handlers.NewTeamHandler(mongoClient, smtpClient, kafkaProducer)
 	api.Handle("/team/members", authMiddleware(http.HandlerFunc(teamHandler.ListTeamMembers))).Methods("GET", "OPTIONS")
 	api.Handle("/team/members/{id}", authMiddleware(http.HandlerFunc(teamHandler.GetTeamMember))).Methods("GET", "OPTIONS")
+	api.Handle("/team/members", authMiddleware(http.HandlerFunc(teamHandler.InviteTeamMember))).Methods("POST", "OPTIONS")
 
 
 	// Start server

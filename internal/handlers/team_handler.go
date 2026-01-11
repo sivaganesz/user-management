@@ -1,12 +1,17 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/white/user-management/internal/models"
 	"github.com/white/user-management/internal/repositories"
 	"github.com/white/user-management/pkg/kafka"
 	"github.com/white/user-management/pkg/mongodb"
@@ -233,6 +238,234 @@ func (h *TeamHandler) GetTeamMember(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// generateInviteToken generates a secure random token for invitation
+func generateInviteToken() (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+
+// InviteTeamMember invites a new team member
+func (h *TeamHandler) InviteTeamMember(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email     string `json:"email"`
+		FirstName string `json:"firstName"`
+		LastName  string `json:"lastName"`
+		Name      string `json:"name"` // Fallback for backward compatibility
+		Role      string `json:"role"`
+		Region    string `json:"region"`
+		Team      string `json:"team"`
+		JobTitle  string `json:"jobTitle"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Handle firstName/lastName or fallback to name
+	firstName := req.FirstName
+	lastName := req.LastName
+	if firstName == "" && lastName == "" && req.Name != "" {
+		// Split name into first and last name
+		parts := splitName(req.Name)
+		firstName = parts[0]
+		if len(parts) > 1 {
+			lastName = parts[1]
+		}
+	}
+
+	if req.Email == "" || (firstName == "" && lastName == "") {
+		respondWithError(w, http.StatusBadRequest, "Email and name are required")
+		return
+	}
+
+	ctx := r.Context()
+	collection := h.client.Collection("users")
+
+	// Check if user already exists
+	var existing bson.M
+	err := collection.FindOne(ctx, bson.M{"email": req.Email}).Decode(&existing)
+	if err == nil {
+		respondWithError(w, http.StatusConflict, "User with this email already exists")
+		return
+	}
+
+	// Generate invite token
+	inviteToken, err := generateInviteToken()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to generate invite token")
+		return
+	}
+
+	// Create new user with invited status
+	now := time.Now()
+	userID := primitive.NewObjectID()
+	fullName := firstName + " " + lastName
+	newUser := bson.M{
+		"_id":              userID,
+		"email":            req.Email,
+		"first_name":       firstName,
+		"last_name":        lastName,
+		"name":             fullName,
+		"role":             getValueOrDefault(req.Role, "sales_rep"),
+		"region":           getValueOrDefault(req.Region, "pan_india"),
+		"team":             getValueOrDefault(req.Team, "sales"),
+		"job_title":        req.JobTitle,
+		"status":           "invited",
+		"permissions":      []string{},
+		"invite_token":     inviteToken,
+		"invite_sent_at":   now,
+		"invite_expires_at": now.Add(7 * 24 * time.Hour), // 7 days expiry
+		"created_at":       now,
+		"updated_at":       now,
+	}
+
+	_, err = collection.InsertOne(ctx, newUser)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to create team member")
+		return
+	}
+
+	// Send invitation email via Kafka queue (or direct SMTP as fallback)
+	emailSent := false
+	inviteURL := fmt.Sprintf("%s/signup?token=%s", getAppBaseURL(), inviteToken)
+	emailErr := h.sendInvitationEmail(req.Email, firstName, inviteURL)
+	if emailErr != nil {
+		// Log error but don't fail the request - user is already created
+		fmt.Printf("Warning: Failed to send invitation email to %s: %v\n", req.Email, emailErr)
+	} else {
+		emailSent = true
+	}
+
+	respondWithJSON(w, http.StatusCreated, map[string]interface{}{
+		"success":   true,
+		"message":   "Team member invited successfully",
+		"emailSent": emailSent,
+		"data": map[string]interface{}{
+			"id":        userID,
+			"email":     req.Email,
+			"firstName": firstName,
+			"lastName":  lastName,
+			"name":      fullName,
+		},
+	})
+}
+
+// sendInvitationEmail sends an invitation email to the new team member using Kafka queue
+func (h *TeamHandler) sendInvitationEmail(toEmail, firstName, inviteURL string) error {
+	subject := "You're invited to join White Platform"
+
+	htmlBody := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Team Invitation</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: white; margin: 0;">Welcome to White Platform</h1>
+    </div>
+    <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+        <p>Hi %s,</p>
+        <p>You've been invited to join the White Platform team! White is an AI-powered B2B sales engagement platform that helps teams manage their sales pipeline efficiently.</p>
+        <p>Click the button below to complete your registration and get started:</p>
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="%s" style="background: #667eea; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Complete Registration</a>
+        </div>
+        <p style="color: #666; font-size: 14px;">This invitation link will expire in 7 days.</p>
+        <p style="color: #666; font-size: 14px;">If the button doesn't work, copy and paste this link into your browser:</p>
+        <p style="color: #667eea; font-size: 12px; word-break: break-all;">%s</p>
+        <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+        <p style="color: #999; font-size: 12px;">This email was sent by White Platform. If you didn't expect this invitation, please ignore this email.</p>
+    </div>
+</body>
+</html>
+`, firstName, inviteURL, inviteURL)
+
+	textBody := fmt.Sprintf(`Hi %s,
+
+You've been invited to join the White Platform team!
+
+Click the link below to complete your registration:
+%s
+
+This invitation link will expire in 7 days.
+
+Best regards,
+White Platform Team
+`, firstName, inviteURL)
+
+	// Create email message with unique ID
+	messageID := primitive.NewObjectID()
+	now := time.Now()
+
+	msg := &models.CommMessage{
+		MessageID:   messageID,
+		Channel:     models.ChannelEmail,
+		Direction:   models.DirectionOutbound,
+		Status:      models.MessageStatusQueued,
+		FromAddress: "sivaganesz7482@gmail.com",
+		FromName:    "White Platform",
+		ToAddresses: []string{toEmail},
+		Subject:     subject,
+		BodyHTML:    htmlBody,
+		BodyText:    textBody,
+		Priority:    models.PriorityHigh, // Invitations are high priority
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	// Store message in MongoDB
+	if h.emailRepo != nil {
+		if err := h.emailRepo.CreateMessageCompat(msg); err != nil {
+			fmt.Printf("Warning: Failed to store invitation email in database: %v\n", err)
+			// Fall back to direct SMTP if available
+			return h.sendInvitationEmailDirect(toEmail, msg)
+		}
+	}
+
+	// Queue via Kafka for go-worker to process // future use
+	// if h.kafkaProducer != nil {
+	// 	queueMessage := models.NewEmailQueueMessage(
+	// 		messageID.Hex(),
+	// 		"smtp", // Use SMTP for system emails
+	// 		"high",
+	// 	)
+	// 	if err := h.kafkaProducer.PublishJSON(kafka.TopicEmailQueue, queueMessage); err != nil {
+	// 		fmt.Printf("Warning: Failed to queue invitation email to Kafka topic %s: %v\n", kafka.TopicEmailQueue, err)
+	// 		// Fall back to direct SMTP if available
+	// 		return h.sendInvitationEmailDirect(toEmail, msg)
+	// 	}
+	// 	fmt.Printf("Invitation email queued successfully for: %s (message_id=%s)\n", toEmail, messageID.Hex())
+	// 	return nil
+	// }
+
+	// No Kafka available, fall back to direct SMTP
+	return h.sendInvitationEmailDirect(toEmail, msg)
+}
+
+// sendInvitationEmailDirect sends invitation email directly via SMTP (fallback when Kafka unavailable)
+func (h *TeamHandler) sendInvitationEmailDirect(toEmail string, msg *models.CommMessage) error {
+	if h.smtpClient == nil {
+		fmt.Printf("SMTP not configured. Invitation email would be sent to: %s\n", toEmail)
+		fmt.Printf("Subject: %s\n", msg.Subject)
+		return nil
+	}
+
+	err := h.smtpClient.SendEmail(msg)
+	if err != nil {
+		fmt.Printf("SMTP ERROR: Failed to send invitation email to %s: %v\n", toEmail, err)
+		return err
+	}
+
+	fmt.Printf("Invitation email sent directly via SMTP to: %s\n", toEmail)
+	return nil
+}
 // getAppBaseURL returns the frontend base URL from environment or default
 func getAppBaseURL() string {
 	baseURL := os.Getenv("APP_BASE_URL")
