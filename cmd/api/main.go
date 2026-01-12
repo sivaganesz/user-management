@@ -224,8 +224,8 @@ func main() {
 	api.Handle("/team/members/{id}/deactivate", authMiddleware(http.HandlerFunc(teamHandler.DeactivateTeamMember))).Methods("POST", "OPTIONS")
 	api.Handle("/team/members/{id}/reactivate", authMiddleware(http.HandlerFunc(teamHandler.ReactivateTeamMember))).Methods("POST", "OPTIONS")
 	api.Handle("/team/members/{id}", authMiddleware(http.HandlerFunc(teamHandler.DeleteTeamMember))).Methods("DELETE", "OPTIONS")
-	// api.Handle("/auth/verify-invite", http.HandlerFunc(teamHandler.VerifyInviteToken)).Methods("GET", "OPTIONS")
-	// api.Handle("/auth/complete-signup", http.HandlerFunc(teamHandler.CompleteSignup)).Methods("POST", "OPTIONS")
+	api.Handle("/auth/verify-invite", http.HandlerFunc(teamHandler.VerifyInviteToken)).Methods("GET", "OPTIONS")
+	api.Handle("/auth/complete-signup", http.HandlerFunc(teamHandler.CompleteSignup)).Methods("POST", "OPTIONS")
 
 	// Start server
 	go func() {

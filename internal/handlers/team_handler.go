@@ -19,6 +19,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // TeamHandler handles team member management endpoints
@@ -727,3 +728,135 @@ func (h *TeamHandler) DeleteTeamMember(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// VerifyInviteToken verifies an invite token and returns user info
+func (h *TeamHandler) VerifyInviteToken(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		respondWithError(w, http.StatusBadRequest, "Token is required")
+		return
+	}
+
+	ctx := r.Context()
+	collection := h.client.Collection("users")
+
+	// Find user by invite token
+	var user bson.M
+	err := collection.FindOne(ctx, bson.M{
+		"invite_token": token,
+		"status":       "invited",
+	}).Decode(&user)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "Invalid or expired invitation token")
+		return
+	}
+
+	// Check if token has expired
+	if expiresAt, ok := user["invite_expires_at"].(primitive.DateTime); ok {
+		if time.Now().After(expiresAt.Time()) {
+			respondWithError(w, http.StatusGone, "Invitation has expired")
+			return
+		}
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"data": map[string]interface{}{
+			"email":     getStringField(user, "email"),
+			"firstName": getStringField(user, "first_name"),
+			"lastName":  getStringField(user, "last_name"),
+			"role":      getStringField(user, "role"),
+			"region":    getStringField(user, "region"),
+		},
+	})
+}
+
+// CompleteSignup completes the signup process for an invited user
+func (h *TeamHandler) CompleteSignup(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token    string `json:"token"`
+		Password string `json:"password"`
+		Phone    string `json:"phone"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invaild request body")
+	}
+
+	if req.Token == "" || req.Password == "" {
+		respondWithError(w, http.StatusBadRequest, "Token and Password are required")
+		return
+	}
+
+	if len(req.Password) < 6 {
+		respondWithError(w, http.StatusBadRequest, "Password must be at least 6 characters long")
+		return
+	}
+	ctx := r.Context()
+	collection := h.client.Collection("users")
+
+	var user bson.M
+	err := collection.FindOne(ctx, bson.M{
+		"invite_token": req.Token,
+		"status":       "invited",
+	}).Decode(&user)
+
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "Invalid or expired invitation token")
+		return
+	}
+
+	// check if token has expired
+	if expiresAt, ok := user["invite_expires_at"].(primitive.DateTime); ok {
+		if time.Now().After(expiresAt.Time()) {
+			respondWithError(w, http.StatusGone, "Invitation has expired")
+			return
+		}
+	}
+
+	//hash password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to process password")
+		return
+	}
+
+	now := time.Now()
+	update := bson.M{
+		"$set": bson.M{
+			"password":     hashedPassword,
+			"status":       "active",
+			"is_active":    true, // Required for login authentication check
+			"updated_at":   now,
+			"activated_at": now,
+		},
+		"$unset": bson.M{
+			"invite_token":      "",
+			"invite_expires_at": "",
+		},
+	}
+
+	if req.Phone != "" {
+		update["$set"].(bson.M)["phone"] = req.Phone
+	}
+
+	result, err := collection.UpdateOne(ctx, bson.M{"_id": user["_id"]}, update)
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to complete signup")
+		return
+	}
+
+	if result.ModifiedCount == 0 {
+		respondWithError(w, http.StatusInternalServerError, "Failed to Update user")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Signup completed successfully",
+		"data": map[string]interface{}{
+			"email": getStringField(user, "email"),
+		},
+	})
+
+}
