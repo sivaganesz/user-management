@@ -499,7 +499,7 @@ func (h *AuthHandler) mark2FAOTPUsed(ctx context.Context, tempToken primitive.Ob
 
 // send2FAEmail sends the 2FA OTP via email using Kafka queue (go-worker handles actual sending)
 func (h *AuthHandler) send2FAEmail(email, name, otp string) error {
-	subject := "CSA Platform - Your Login Verification Code"
+	subject := "White Platform - Your Login Verification Code"
 
 	htmlBody := fmt.Sprintf(`
 <!DOCTYPE html>
@@ -522,7 +522,7 @@ func (h *AuthHandler) send2FAEmail(email, name, otp string) error {
         </div>
         <div class="content">
             <p>Hello %s,</p>
-            <p>You are attempting to login to CSA Platform. Please use the following verification code to complete your login:</p>
+            <p>You are attempting to login to White Platform. Please use the following verification code to complete your login:</p>
 
             <div class="otp-code">%s</div>
 
@@ -533,7 +533,7 @@ func (h *AuthHandler) send2FAEmail(email, name, otp string) error {
             <p class="warning">Never share this code with anyone. Our team will never ask for your verification code.</p>
         </div>
         <div class="footer">
-            <p>&copy; 2025 CSA Platform. All rights reserved.</p>
+            <p>&copy; 2025 White Platform. All rights reserved.</p>
             <p>This is an automated email. Please do not reply.</p>
         </div>
     </div>
@@ -546,7 +546,7 @@ Login Verification
 
 Hello %s,
 
-You are attempting to login to CSA Platform. Please use the following verification code to complete your login:
+You are attempting to login to White Platform. Please use the following verification code to complete your login:
 
 Verification Code: %s
 
@@ -557,7 +557,7 @@ If you didn't request this login, please ignore this email and ensure your accou
 SECURITY WARNING: Never share this code with anyone. Our team will never ask for your verification code.
 
 ---
-CSA Platform
+White Platform
 This is an automated email. Please do not reply.
 	`, name, otp)
 

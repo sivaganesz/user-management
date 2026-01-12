@@ -247,7 +247,6 @@ func generateInviteToken() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-
 // InviteTeamMember invites a new team member
 func (h *TeamHandler) InviteTeamMember(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -306,22 +305,22 @@ func (h *TeamHandler) InviteTeamMember(w http.ResponseWriter, r *http.Request) {
 	userID := primitive.NewObjectID()
 	fullName := firstName + " " + lastName
 	newUser := bson.M{
-		"_id":              userID,
-		"email":            req.Email,
-		"first_name":       firstName,
-		"last_name":        lastName,
-		"name":             fullName,
-		"role":             getValueOrDefault(req.Role, "sales_rep"),
-		"region":           getValueOrDefault(req.Region, "pan_india"),
-		"team":             getValueOrDefault(req.Team, "sales"),
-		"job_title":        req.JobTitle,
-		"status":           "invited",
-		"permissions":      []string{},
-		"invite_token":     inviteToken,
-		"invite_sent_at":   now,
+		"_id":               userID,
+		"email":             req.Email,
+		"first_name":        firstName,
+		"last_name":         lastName,
+		"name":              fullName,
+		"role":              getValueOrDefault(req.Role, "sales_rep"),
+		"region":            getValueOrDefault(req.Region, "pan_india"),
+		"team":              getValueOrDefault(req.Team, "sales"),
+		"job_title":         req.JobTitle,
+		"status":            "invited",
+		"permissions":       []string{},
+		"invite_token":      inviteToken,
+		"invite_sent_at":    now,
 		"invite_expires_at": now.Add(7 * 24 * time.Hour), // 7 days expiry
-		"created_at":       now,
-		"updated_at":       now,
+		"created_at":        now,
+		"updated_at":        now,
 	}
 
 	_, err = collection.InsertOne(ctx, newUser)
@@ -466,6 +465,7 @@ func (h *TeamHandler) sendInvitationEmailDirect(toEmail string, msg *models.Comm
 	fmt.Printf("Invitation email sent directly via SMTP to: %s\n", toEmail)
 	return nil
 }
+
 // getAppBaseURL returns the frontend base URL from environment or default
 func getAppBaseURL() string {
 	baseURL := os.Getenv("APP_BASE_URL")
@@ -502,6 +502,7 @@ func splitName(name string) []string {
 	// Join middle names with last name
 	return []string{parts[0], joinStrings(parts[1:])}
 }
+
 // joinStrings joins multiple strings with space
 func joinStrings(parts []string) string {
 	result := ""
@@ -560,3 +561,169 @@ func getValueOrDefault(val, defaultVal string) string {
 	}
 	return defaultVal
 }
+
+// UpdateTeamMember updates a team member
+func (h *TeamHandler) UpdateTeamMember(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+
+	id, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid team member ID")
+		return
+	}
+	var req map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	collection := h.client.Collection("users")
+
+	// Build update document
+	update := bson.M{"updated_at": time.Now()}
+
+	// Map frontend field names to database field names
+	fieldMapping := map[string]string{
+		"firstName": "first_name",
+		"lastName":  "last_name",
+		"name":      "name",
+		"role":      "role",
+		"region":    "region",
+		"team":      "team",
+		"phone":     "phone",
+		"jobTitle":  "job_title",
+		"avatar":    "avatar",
+	}
+	for key, value := range fieldMapping {
+		if val, ok := req[key]; ok {
+			update[value] = val
+		}
+	}
+
+	// If firstName or lastName is updated, also update the combined name field
+	firstName, hasFirst := req["firstName"].(string)
+	lastName, hasLast := req["lastName"].(string)
+	if hasFirst || hasLast {
+		// Get current values if not provided
+		if !hasFirst || !hasLast {
+			var existing bson.M
+			err := collection.FindOne(ctx, bson.M{"_id": id}).Decode(&existing)
+			if err == nil {
+				if !hasFirst {
+					firstName = getStringField(existing, "first_name")
+				}
+				if !hasLast {
+					lastName = getStringField(existing, "last_name")
+				}
+			}
+		}
+		update["name"] = firstName + " " + lastName
+	}
+
+	result, err := collection.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": update})
+	if err != nil || result.MatchedCount == 0 {
+		respondWithError(w, http.StatusInternalServerError, "Failed to update team member")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Team member updated successfully",
+	})
+}
+
+// DeactivateTeamMember deactivates a team member
+func (h *TeamHandler) DeactivateTeamMember(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+
+	id, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid team member ID")
+		return
+	}
+
+	collection := h.client.Collection("users")
+	_, err = collection.UpdateOne(ctx, bson.M{"_id": id}, bson.M{
+		"$set": bson.M{
+			"status":     "inactive",
+			"updated_at": time.Now(),
+		},
+	})
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to deactivate team member")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Team member deactivated successfully",
+	})
+}
+
+// ReactivateTeamMember reactivates a deactivated team member
+func (h *TeamHandler) ReactivateTeamMember(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+
+	id, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid team member ID")
+		return
+	}
+
+	collection := h.client.Collection("users")
+	_, err = collection.UpdateOne(ctx,
+		bson.M{"_id": id},
+		bson.M{
+			"$set": bson.M{
+				"status":     "active",
+				"updated_at": time.Now()},
+		})
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to reactivate team member")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Team member reactivated successfully",
+	})
+}
+
+// DeleteTeamMember deletes a team member by ID
+func (h *TeamHandler) DeleteTeamMember(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+
+	id, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid team member ID")
+		return
+	}
+
+	collection := h.client.Collection("users")
+	_, err = collection.UpdateOne(ctx,
+		bson.M{"_id": id},
+		bson.M{
+			"$set": bson.M{
+				"status":     "deleted",
+				"updated_at": time.Now(),
+			},
+		},
+	)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to delete team member")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Team member deleted successfully",
+	})
+}
+
