@@ -28,6 +28,7 @@ type AuthHandler struct {
 	smtpClient   *smtp.SMTPClient
 	db           *mongodb.Client
 	emailRepo    *repositories.MongoEmailRepository
+	userRepo     *repositories.MongoUserRepository
 }
 
 func NewAuthHandler(db *mongodb.Client, config *config.Config, producer *kafka.Producer) *AuthHandler {
@@ -57,6 +58,7 @@ func NewAuthHandler(db *mongodb.Client, config *config.Config, producer *kafka.P
 		smtpClient:   smtpClient,
 		db:           db,
 		emailRepo:    emailRepo,
+		userRepo: 	  userRepo,
 	}
 }
 
@@ -379,19 +381,38 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Failed to create reset token")
 		return
 	}
-	
-	// In production, send email with reset link containing the token
-	// For now, return the token in the response for testing
-	response := ForgotPasswordResponse{
-		Message: "If the email exists, a password reset link has been sent",
+	user, err := h.userRepo.GetByEmailCompat(req.Email)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "This is email not exists")
+		return
+	}
+	// Send invitation email via Kafka queue (or direct SMTP as fallback)
+	emailSent := false
+	inviteURL := fmt.Sprintf("%s/auth/password/reset?token=%s", getAppBaseURL(), resetToken)
+	emailErr := h.sendForgetPasswordEmail(req.Email, user.Name, inviteURL)
+	if emailErr != nil {
+		// Log error but don't fail the request - user is already created
+		fmt.Printf("Warning: Failed to send invitation email to %s: %v\n", req.Email, emailErr)
+	} else {
+		emailSent = true
 	}
 
-		// Only include token in development mode
-	if h.config.Server.Environment == "development" {
-		response.ResetToken = resetToken.String()
-	}
+	// // In production, send email with reset link containing the token
+	// // For now, return the token in the response for testing
+	// response := ForgotPasswordResponse{
+	// 	Message: "If the email exists, a password reset link has been sent",
+	// }
 
-	respondWithJSON(w, http.StatusOK, response)
+	// // Only include token in development mode
+	// if h.config.Server.Environment == "development" {
+	// 	response.ResetToken = resetToken
+	// }
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"success":   true,
+		"message":   "If the email exists, a password reset link has been sent",
+		"emailSent": emailSent,
+	})
 }
 
 // ResetPasswordRequest represents the reset password request body
@@ -426,14 +447,14 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse reset token
-	resetToken, err := primitive.ObjectIDFromHex(req.ResetToken)
-	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Invalid reset token format")
-		return
-	}
+	// resetToken, err := primitive.ObjectIDFromHex(req.ResetToken)
+	// if err != nil {
+	// 	respondWithError(w, http.StatusBadRequest, "Invalid reset token format")
+	// 	return
+	// }
 // Reset password
-	if err := h.authService.ResetPassword(resetToken, req.NewPassword); err != nil {
-		respondWithError(w, http.StatusBadRequest, "")
+	if err := h.authService.ResetPassword(req.ResetToken, req.NewPassword); err != nil {
+		respondWithError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -624,6 +645,144 @@ func (h *AuthHandler) send2FAEmailDirect(email string, msg *models.CommMessage) 
 		return err
 	}
 	fmt.Printf("2FA email sent successfully to: %s\n", email)
+	return nil
+}
+
+// sendForgetPasswordEmail sends Forget email via.
+// sendForgetPasswordEmail sends forgot password email
+func (h *AuthHandler) sendForgetPasswordEmail(toEmail, name, resetLink string) error {
+	subject := "Reset your password"
+
+	htmlBody := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Password Reset</title>
+</head>
+<body style="font-family: Arial, sans-serif; background-color: #f6f6f6; padding: 20px;">
+  <table width="100%%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td align="center">
+        <table width="600" style="background: #ffffff; padding: 30px; border-radius: 8px;">
+          <tr>
+            <td>
+              <h2 style="color: #333;">Reset your password</h2>
+
+              <p>Hello %s,</p>
+
+              <p>
+                We received a request to reset your password.
+                Click the button below to choose a new one.
+              </p>
+
+              <p style="text-align: center; margin: 30px 0;">
+                <a href="%s"
+                   style="background: #4f46e5; color: #ffffff; padding: 12px 24px;
+                          text-decoration: none; border-radius: 6px; font-weight: bold;">
+                  Reset Password
+                </a>
+              </p>
+
+              <p>
+                This link will expire in <strong>30 minutes</strong>.
+              </p>
+
+              <p>
+                If you did not request a password reset, you can safely ignore this email.
+              </p>
+
+              <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
+
+              <p style="font-size: 12px; color: #888;">
+                If the button doesn’t work, copy and paste this link into your browser:
+                <br>
+                <a href="%s">%s</a>
+              </p>
+
+              <p style="font-size: 12px; color: #888;">
+                — The %s Security Team
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`,
+		name,
+		resetLink,
+		resetLink,
+		resetLink,
+		"White",
+	)
+
+	textBody := fmt.Sprintf(
+		`Hello %s,
+
+We received a request to reset your password.
+
+Reset your password using the link below:
+%s
+
+This link will expire in 30 minutes.
+
+If you did not request this, you can ignore this email.
+
+— %s Security Team
+`,
+		name,
+		resetLink,
+		"user",
+	)
+
+	// Create email message with unique ID
+	messageID := primitive.NewObjectID()
+	now := time.Now()
+
+	msg := &models.CommMessage{
+		MessageID:   messageID,
+		Channel:     models.ChannelEmail,
+		Direction:   models.DirectionOutbound,
+		Status:      models.MessageStatusQueued,
+		FromAddress: "sivaganesz7482@gmail.com",
+		FromName:    "White Platform",
+		ToAddresses: []string{toEmail},
+		Subject:     subject,
+		BodyHTML:    htmlBody,
+		BodyText:    textBody,
+		Priority:    models.PriorityHigh, // Invitations are high priority
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	// Store message in MongoDB
+	if h.emailRepo != nil {
+		if err := h.emailRepo.CreateMessageCompat(msg); err != nil {
+			fmt.Printf("Warning: Failed to store invitation email in database: %v\n", err)
+			// Fall back to direct SMTP if available
+			return h.sendForgetPasswordEmailDirect(toEmail, msg)
+		}
+	}
+	// Send email via your email service
+	return h.sendForgetPasswordEmailDirect(toEmail, msg)
+}
+
+func (h *AuthHandler) sendForgetPasswordEmailDirect(toEmail string, msg *models.CommMessage) error {
+	if h.smtpClient == nil {
+		fmt.Printf("SMTP not configured. Invitation email would be sent to: %s\n", toEmail)
+		fmt.Printf("Subject: %s\n", msg.Subject)
+		return nil
+	}
+	err := h.smtpClient.SendEmail(msg)
+	if err != nil {
+		fmt.Printf("SMTP ERROR: Failed to send invitation email to %s: %v\n", toEmail, err)
+		return err
+	}
+
+	fmt.Printf("Invitation email sent directly via SMTP to: %s\n", toEmail)
 	return nil
 }
 

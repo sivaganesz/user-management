@@ -219,7 +219,7 @@ func main() {
 	teamHandler := handlers.NewTeamHandler(mongoClient, smtpClient, kafkaProducer)
 	api.Handle("/team/members", authMiddleware(http.HandlerFunc(teamHandler.ListTeamMembers))).Methods("GET", "OPTIONS")
 	api.Handle("/team/members/{id}", authMiddleware(http.HandlerFunc(teamHandler.GetTeamMember))).Methods("GET", "OPTIONS")
-	api.Handle("/team/members", authMiddleware(http.HandlerFunc(teamHandler.InviteTeamMember))).Methods("POST", "OPTIONS")
+	api.Handle("/team/members/invite", authMiddleware(http.HandlerFunc(teamHandler.InviteTeamMember))).Methods("POST", "OPTIONS")
 	api.Handle("/team/members/{id}", authMiddleware(http.HandlerFunc(teamHandler.UpdateTeamMember))).Methods("PUT", "OPTIONS")
 	api.Handle("/team/members/{id}/deactivate", authMiddleware(http.HandlerFunc(teamHandler.DeactivateTeamMember))).Methods("POST", "OPTIONS")
 	api.Handle("/team/members/{id}/reactivate", authMiddleware(http.HandlerFunc(teamHandler.ReactivateTeamMember))).Methods("POST", "OPTIONS")
@@ -283,6 +283,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 		allowedOrigins := []string{
 			"http://localhost:3000",
+			"https://electric-exciting-shepherd.ngrok-free.app",
 			"http://localhost:5173",
 			"http://localhost:5174",
 			"http://localhost:5175",

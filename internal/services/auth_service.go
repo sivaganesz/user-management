@@ -1,6 +1,9 @@
 package services
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -215,23 +218,27 @@ func (s *AuthService) ChangePassword(userID primitive.ObjectID, oldPassword, new
 }
 
 // ForgotPassword creates a password reset token for a user
-func (s *AuthService) ForgotPassword(email,ipAddress, userAgent string) (primitive.ObjectID, error) {
+func (s *AuthService) ForgotPassword(email,ipAddress, userAgent string) (string, error) {
 	user, err := s.userRepo.GetByEmailCompat(email)
 	if err != nil {
 		// Don't reveal if user exists or not (security best practice)
 		// Return a dummy token to prevent user enumeration
-		return primitive.NewObjectID(), nil
+		return primitive.NewObjectID().Hex(), nil
 	}
 	// Check if user is active (default to true if not set)
 	if !user.IsActive {
 		// Don't reveal account status
-		return primitive.NewObjectID(), nil
+		return primitive.NewObjectID().Hex(), nil
 	}
 
 		// Create reset token
-	resetToken := primitive.NewObjectID()
+	resetToken,err :=generateInviteToken()
+	if err != nil {
+		return "", err
+	}
+	resetTokenHash := hashToken(resetToken)
 	reset := models.PasswordReset{
-		ResetToken: resetToken,
+		ResetToken: resetTokenHash,
 		UserID:     user.ID,
 		Email:      user.Email,
 		CreatedAt:  time.Now(),
@@ -242,14 +249,14 @@ func (s *AuthService) ForgotPassword(email,ipAddress, userAgent string) (primiti
 	}
 
 	if err := s.passwordResetRepo.CreateReset(reset); err != nil {
-		return primitive.ObjectID{}, fmt.Errorf("failed to create reset token: %w", err)
+		return "", fmt.Errorf("failed to create reset token: %w", err)
 	}
 
 	return resetToken, nil
 }
 
 // ResetPassword resets a user's password using a reset token
-func (s *AuthService) ResetPassword(resetToken primitive.ObjectID, newPassword string) error {
+func (s *AuthService) ResetPassword(resetToken, newPassword string) error {
 	// Get reset token
 	reset, err := s.passwordResetRepo.GetByToken(resetToken)
 	if err != nil {
@@ -335,4 +342,17 @@ func (s *AuthService) CreateForHandler(user *models.MongoUser) error {
 		return fmt.Errorf("failed to create user: %v", err)
 	}
 	return nil
+}
+// generateInviteToken generates a secure random token for invitation
+func generateInviteToken() (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+func hashToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
 }
