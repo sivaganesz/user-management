@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -248,6 +249,11 @@ func generateInviteToken() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
+func hashToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
+}
+
 // InviteTeamMember invites a new team member
 func (h *TeamHandler) InviteTeamMember(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -301,6 +307,7 @@ func (h *TeamHandler) InviteTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	inviteTokenHash := hashToken(inviteToken)
 	// Create new user with invited status
 	now := time.Now()
 	userID := primitive.NewObjectID()
@@ -317,7 +324,7 @@ func (h *TeamHandler) InviteTeamMember(w http.ResponseWriter, r *http.Request) {
 		"job_title":         req.JobTitle,
 		"status":            "invited",
 		"permissions":       []string{},
-		"invite_token":      inviteToken,
+		"invite_token":      inviteTokenHash,
 		"invite_sent_at":    now,
 		"invite_expires_at": now.Add(7 * 24 * time.Hour), // 7 days expiry
 		"created_at":        now,
@@ -332,7 +339,7 @@ func (h *TeamHandler) InviteTeamMember(w http.ResponseWriter, r *http.Request) {
 
 	// Send invitation email via Kafka queue (or direct SMTP as fallback)
 	emailSent := false
-	inviteURL := fmt.Sprintf("%s/signup?token=%s", getAppBaseURL(), inviteToken)
+	inviteURL := fmt.Sprintf("%s/signup?token=%s", getAppBaseURL(), inviteTokenHash)
 	emailErr := h.sendInvitationEmail(req.Email, firstName, inviteURL)
 	if emailErr != nil {
 		// Log error but don't fail the request - user is already created

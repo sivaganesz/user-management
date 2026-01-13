@@ -536,7 +536,7 @@ func (r *MongoUserRepository) CreateReset(reset models.PasswordReset) error {
 }
 
 // GetByToken retrieves a password reset by token
-func (r *MongoUserRepository) GetByToken(token primitive.ObjectID) (*models.PasswordReset, error) {
+func (r *MongoUserRepository) GetByToken(token string) (*models.PasswordReset, error) {
 	ctx := context.Background()
 	collection := r.client.Collection("password_resets")
 
@@ -556,7 +556,7 @@ func (r *MongoUserRepository) GetByToken(token primitive.ObjectID) (*models.Pass
 }
 
 // MarkAsUsed marks a password reset token as used
-func (r *MongoUserRepository) MarkAsUsed(resetToken primitive.ObjectID) error {
+func (r *MongoUserRepository) MarkAsUsed(resetToken string) error {
 	ctx := context.Background()
 	collection := r.client.Collection("password_resets")
 

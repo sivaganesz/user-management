@@ -8,7 +8,7 @@ import (
 
 // PasswordReset represents a password reset token
 type PasswordReset struct {
-	ResetToken primitive.ObjectID `json:"reset_token"`
+	ResetToken string             `json:"reset_token"`
 	UserID     primitive.ObjectID `json:"user_id"`
 	Email      string             `json:"email"`
 	CreatedAt  time.Time          `json:"created_at"`
