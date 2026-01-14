@@ -17,6 +17,7 @@ import (
 	"github.com/white/user-management/config"
 	"github.com/white/user-management/internal/handlers"
 	"github.com/white/user-management/internal/middleware"
+
 	// "github.com/white/user-management/internal/repositories"
 	// "github.com/white/user-management/internal/services"
 	"github.com/white/user-management/internal/utils"
@@ -39,11 +40,11 @@ func main() {
 	log.Printf("Connecting to MongoDB...")
 	// Initialize MongoDB client
 	mongoConfig := mongodb.Config{
-		URI: mongoURI,
-		Database: getEnvWithDefault("MONGODB_DATABASE", "white-dev"),
+		URI:         mongoURI,
+		Database:    getEnvWithDefault("MONGODB_DATABASE", "white-dev"),
 		MaxPoolSize: uint64(getEnvIntWithDefault("MONGODB_MAX_POOL_SIZE", 100)),
 		MinPoolSize: uint64(getEnvIntWithDefault("MONGODB_MIN_POOL_SIZE", 10)),
-		MaxRetries:  getEnvIntWithDefault("MONGODB_MAX_RETRIES", 5),	
+		MaxRetries:  getEnvIntWithDefault("MONGODB_MAX_RETRIES", 5),
 	}
 
 	mongoClient, err := mongodb.NewClient(mongoConfig)
@@ -53,9 +54,8 @@ func main() {
 	defer mongoClient.Close()
 	log.Println("Successfully connected to MongoDB")
 
-
 	// Initialize Kafka producer (optional - gracefully handle if not available)
-	var kafkaProducer *kafka.Producer
+	// var kafkaProducer *kafka.Producer
 
 	// Load Kafka configuration from environment
 	kafkaBrokers := os.Getenv("KAFKA_BROKERS")
@@ -72,7 +72,8 @@ func main() {
 		SASLMechanism: getEnvWithDefault("KAFKA_SASL_MECHANISM", "plain"),
 	}
 
-	kafkaProducer, err = kafka.NewProducer(kafkaConfig)
+	ctx := context.Background()
+	kafkaProducer, err := kafka.NewProducer(kafkaConfig)
 	if err != nil {
 		log.Printf("Warning: Kafka producer not available: %v. Events will not be published.", err)
 		kafkaProducer = nil // Set to nil so handlers can check
@@ -97,7 +98,6 @@ func main() {
 		log.Println("Warning: SMTP_HOST not configured. SMTP email will not be available.")
 	}
 
-	
 	// =====================================================
 	// MONGODB REPOSITORIES
 	// =====================================================
@@ -118,12 +118,10 @@ func main() {
 	// _ = services.NewEventPublisher(kafkaProducer)
 	// log.Println("Event publisher service initialized")
 
-
 	// =====================================================
 	// MONGODB HANDLERS (TASK GROUP 1: MongoDB Migration Complete)
 	// =====================================================
 	// Initialize MongoDB handlers (using MongoDB repositories)
-
 
 	// Initialize router
 	router := mux.NewRouter()
@@ -176,7 +174,7 @@ func main() {
 			Environment: "development",
 		},
 	}
-	
+
 	// Initialize JWT service
 	jwtService, err := utils.NewJWTService(cfg.JWT)
 	if err != nil {
@@ -204,7 +202,7 @@ func main() {
 	// =====================================================
 	// Authentication Routes (MongoDB-based)
 	// =====================================================
-	authHandler := handlers.NewAuthHandler(mongoClient,cfg, kafkaProducer)
+	authHandler := handlers.NewAuthHandler(mongoClient, cfg, kafkaProducer)
 	// authHandler.SetAuditPublisher(auditPublisher)
 	api.HandleFunc("/auth/login", authHandler.Login).Methods("POST", "OPTIONS")
 	api.HandleFunc("/auth/verify-2fa", authHandler.Verify2FA).Methods("POST", "OPTIONS")

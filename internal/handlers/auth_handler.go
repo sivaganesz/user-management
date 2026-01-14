@@ -58,7 +58,7 @@ func NewAuthHandler(db *mongodb.Client, config *config.Config, producer *kafka.P
 		smtpClient:   smtpClient,
 		db:           db,
 		emailRepo:    emailRepo,
-		userRepo: 	  userRepo,
+		userRepo:     userRepo,
 	}
 }
 
@@ -344,7 +344,6 @@ type ForgotPasswordResponse struct {
 	ResetToken string `json:"reset_token,omitempty"` // Only for testing/development
 }
 
-
 // ForgotPassword godoc
 // @Summary Request password reset
 // @Description Sends password reset token to user's email
@@ -452,7 +451,7 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	// 	respondWithError(w, http.StatusBadRequest, "Invalid reset token format")
 	// 	return
 	// }
-// Reset password
+	// Reset password
 	if err := h.authService.ResetPassword(req.ResetToken, req.NewPassword); err != nil {
 		respondWithError(w, http.StatusBadRequest, err.Error())
 		return
@@ -463,6 +462,7 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	})
 
 }
+
 type TwoFAOTP struct {
 	ID        primitive.ObjectID `bson:"_id,omitempty"`
 	UserID    primitive.ObjectID `bson:"user_id"`
@@ -881,11 +881,14 @@ func (h *AuthHandler) publishLoginEvent(user *models.User, ipAddress, userAgent 
 		"logged_in_at": time.Now().Unix(),
 	}
 
-	if err := h.producer.PublishJSON("users.logged_in", event); err != nil {
+	ctx := context.Background() // or pass the request/context from handler
+
+	if err := h.producer.PublishJSON(ctx, "users.logged_in", event); err != nil {
 		// Log error but don't fail the login process
-		// In production, you'd use a proper logger
-		println("Failed to publish login event:", err.Error())
+		// In production, use a proper logger
+		fmt.Println("Failed to publish login event:", err.Error())
 	}
+
 }
 
 // publishLogoutEvent publishes a user logout event to Kafka
@@ -898,7 +901,7 @@ func (h *AuthHandler) publishLogoutEvent(user *models.User, ipAddress, userAgent
 
 	event := map[string]interface{}{
 		"event_id":      primitive.NewObjectID().String(),
-		"user_id":       user.ID.String(),
+		"user_id":       user.ID.Hex(),
 		"email":         user.Email,
 		"role":          user.Role,
 		"region":        user.Region,
@@ -907,14 +910,14 @@ func (h *AuthHandler) publishLogoutEvent(user *models.User, ipAddress, userAgent
 		"user_agent":    userAgent,
 		"logged_out_at": time.Now().Unix(),
 	}
+	ctx := context.Background() // or pass the request/context from handler
 
-	if err := h.producer.PublishJSON("users.logged_out", event); err != nil {
+	if err := h.producer.PublishJSON(ctx, "users.logged_out", event); err != nil {
 		// Log error but don't fail the logout process
 		// In production, you'd use a proper logger
 		println("Failed to publish logout event:", err.Error())
 	}
 }
-
 
 type InviteUserRequest struct {
 	Email       string   `json:"email"`
@@ -925,6 +928,7 @@ type InviteUserRequest struct {
 	Team        string   `json:"team"`
 	Permissions []string `json:"permissions"`
 }
+
 // @Security BearerAuth
 func (h *AuthHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	// Verify user is authenticated
@@ -966,17 +970,17 @@ func (h *AuthHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	// Create new user (inactive by default, pending activation)
 	newUser := &models.MongoUser{
-		ID:          primitive.NewObjectID(),
-		Email:       req.Email,
-		PasswordHash:req.Password,
-		Name:        req.Name,
-		Role:        models.UserRole(req.Role),
-		Region:      req.Region,
-		Team:        req.Team,
-		Permissions: req.Permissions,
-		IsActive:    true, // User is inactive until they verify email
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:           primitive.NewObjectID(),
+		Email:        req.Email,
+		PasswordHash: req.Password,
+		Name:         req.Name,
+		Role:         models.UserRole(req.Role),
+		Region:       req.Region,
+		Team:         req.Team,
+		Permissions:  req.Permissions,
+		IsActive:     true, // User is inactive until they verify email
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 
 	// Call repository
