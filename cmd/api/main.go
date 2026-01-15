@@ -18,7 +18,7 @@ import (
 	"github.com/white/user-management/internal/handlers"
 	"github.com/white/user-management/internal/middleware"
 
-	// "github.com/white/user-management/internal/repositories"
+	"github.com/white/user-management/internal/repositories"
 	// "github.com/white/user-management/internal/services"
 	"github.com/white/user-management/internal/utils"
 	"github.com/white/user-management/pkg/kafka"
@@ -105,7 +105,7 @@ func main() {
 
 	// mongoUserRepo := repositories.NewMongoUserRepository(mongoClient)
 	// Settings repository (User Settings, Company Settings, Notifications, Audit Logs)
-	// settingsRepo := repositories.NewSettingsRepository(mongoClient)
+	settingsRepo := repositories.NewSettingsRepository(mongoClient)
 	// log.Println("MongoDB repositories initialized (all modules including Phase 3)")
 	// emailRepo := repositories.NewMongoEmailRepository(mongoClient)
 
@@ -122,6 +122,10 @@ func main() {
 	// MONGODB HANDLERS (TASK GROUP 1: MongoDB Migration Complete)
 	// =====================================================
 	// Initialize MongoDB handlers (using MongoDB repositories)
+	// Settings handler (User Profile, Security, Email Signature, Company, Notifications, Audit Logs, Approval Rules)
+	settingsHandler := handlers.NewSettingsHandler(settingsRepo)
+	log.Println("Settings Module handler initialized")
+
 
 	// Initialize router
 	router := mux.NewRouter()
@@ -224,6 +228,19 @@ func main() {
 	api.Handle("/team/members/{id}", authMiddleware(http.HandlerFunc(teamHandler.DeleteTeamMember))).Methods("DELETE", "OPTIONS")
 	api.Handle("/auth/verify-invite", http.HandlerFunc(teamHandler.VerifyInviteToken)).Methods("GET", "OPTIONS")
 	api.Handle("/auth/complete-signup", http.HandlerFunc(teamHandler.CompleteSignup)).Methods("POST", "OPTIONS")
+
+
+
+	// ----- Settings Module Routes -----
+	// User Settings (Profile is read-only - managed by O365)
+	api.Handle("/settings/profile", authMiddleware(http.HandlerFunc(settingsHandler.GetProfile))).Methods("GET", "OPTIONS")
+
+	// System Settings (Admin)
+	api.Handle("/system/company", authMiddleware(http.HandlerFunc(settingsHandler.GetCompanyInfo))).Methods("GET", "OPTIONS")
+	api.Handle("/system/company", authMiddleware(http.HandlerFunc(settingsHandler.UpdateCompanyInfo))).Methods("PUT", "OPTIONS")
+	api.Handle("/system/notifications", authMiddleware(http.HandlerFunc(settingsHandler.GetNotificationSettings))).Methods("GET", "OPTIONS")
+	api.Handle("/system/notifications", authMiddleware(http.HandlerFunc(settingsHandler.UpdateNotificationSettings))).Methods("PUT", "OPTIONS")
+	api.Handle("/system/audit-logs", authMiddleware(http.HandlerFunc(settingsHandler.GetAuditLogs))).Methods("GET", "OPTIONS")
 
 	// Start server
 	go func() {

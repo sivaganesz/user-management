@@ -3,7 +3,7 @@ package repositories
 import(
 	"context"
 	"time"
-	"fmt"
+	// "fmt"
 
 	"github.com/white/user-management/internal/models"
 	"github.com/white/user-management/pkg/mongodb"
@@ -50,17 +50,44 @@ func NewSettingsRepository(client *mongodb.Client) *SettingsRepository {
 // ==================== User Profile ====================
 
 // GetUserProfile retrieves user profile by user ID
-func (r *SettingsRepository) GetUserProfileByUserID(ctx context.Context, userID primitive.ObjectID) (*models.SettingsUserProfile, error) {
-
+func (r *SettingsRepository) GetUserProfile(ctx context.Context, userID primitive.ObjectID) (*models.SettingsUserProfile, error) {
+	// First check if a profile exists in user_profiles collection
 	var profile models.SettingsUserProfile
-	err := r.userProfiles.FindOne(ctx, bson.M{"user_id": userID}).Decode(&profile);
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return nil, WrapNotFound(err, ErrUserNotFound)
-		}
-		return nil, fmt.Errorf("error finding user profile: %w", err)
+	err := r.userProfiles.FindOne(ctx, bson.M{"user_id": userID}).Decode(&profile)
+	if err == nil {
+		return &profile, nil
 	}
-	return &profile, nil
+
+	// If not found, create from users collection
+	if err == mongo.ErrNoDocuments {
+		var user models.MongoUser
+		err = r.users.FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
+		if err != nil {
+			return nil, err
+		}
+
+		// Create profile from user data
+		profile = models.SettingsUserProfile{
+			ID:        primitive.NewObjectID(),
+			UserID:    userID,
+			FirstName: user.Name, // Use full name as first name for now
+			LastName:  "",
+			Email:     user.Email,
+			Region:    user.Region,
+			CreatedAt: user.CreatedAt,
+			UpdatedAt: time.Now(),
+		}
+
+		// Save the profile
+		_, err = r.userProfiles.InsertOne(ctx, profile)
+		if err != nil {
+			return nil, err
+		}
+
+		return &profile, nil
+	}
+
+	return nil, err
 }
 
 // UpdateUserProfile updates user profile
@@ -308,6 +335,32 @@ func (r *SettingsRepository) UpdateCompanyInfo(ctx context.Context, update *mode
 
 	return &info, nil
 }
+
+// ==================== Notification Settings ====================
+
+// GetNotificationSettings retrieves notification settings by user ID
+func (r *SettingsRepository) GetNotificationSettings(ctx context.Context, userID primitive.ObjectID) (*models.SettingsNotificationSettings, error) {
+	var settings models.SettingsNotificationSettings
+	err := r.notificationSettings.FindOne(ctx, bson.M{"user_id": userID}).Decode(&settings)
+	if err == mongo.ErrNoDocuments {
+		// Return default settings
+		return &models.SettingsNotificationSettings{
+			UserID: userID,
+			EmailNotifications: models.SettingsEmailNotificationSettings{
+				TaskReminder:    true,
+				WeeklyReport:    true,
+			},
+			BrowserNotifications: models.SettingsBrowserNotificationSettings{
+				Enabled:    true,
+				NewMessage: true,
+				TaskDue:    true,
+			},
+			UpdatedAt: time.Now(),
+		}, nil
+	}
+	return &settings, err
+}
+
 
 // UpdateNotificationSettings updates notification settings
 func (r *SettingsRepository) UpdateNotificationSettings(ctx context.Context, userID primitive.ObjectID, update *models.SettingsUpdateNotificationSettingsRequest) (*models.SettingsNotificationSettings, error) {
