@@ -307,3 +307,291 @@ func (r *MongoTemplateRepository) EnsureIndexes(ctx context.Context) error {
 
 	return nil
 }
+
+
+// =============================================================================
+// Service layer compatibility methods
+// =============================================================================
+
+// GetByIDCompat retrieves a sequence template by ID with its steps
+func (r *MongoTemplateRepository) GetByIDCompat(templateID primitive.ObjectID) (*models.SequenceTemplateWithSteps, error) {
+	ctx := context.Background()
+
+	var template models.SequenceTemplateWithSteps
+	filter := bson.M{"_id": templateID}
+
+	err := r.sequenceCollection.FindOne(ctx, filter).Decode(&template)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, WrapNotFound(mongo.ErrNoDocuments, ErrTemplateNotFound)
+		}
+		return nil, fmt.Errorf("error finding sequence template by ID: %w", err)
+	}
+
+	return &template, nil
+}
+
+// CreateSequenceTemplate creates a sequence template with steps
+func (r *MongoTemplateRepository) CreateSequenceTemplate(template *models.SequenceTemplateWithSteps) error {
+	ctx := context.Background()
+
+	// Generate new ID if not set
+	if template.Template.TemplateID.IsZero() {
+		template.Template.TemplateID = primitive.NewObjectID()
+	}
+
+	// Set timestamps
+	now := time.Now()
+	template.Template.CreatedAt = now
+	template.Template.UpdatedAt = now
+
+	// Set step timestamps and template IDs
+	for i := range template.Steps {
+		template.Steps[i].TemplateID = template.Template.TemplateID
+		template.Steps[i].CreatedAt = now
+		// Ensure step_order is set correctly
+		if template.Steps[i].StepOrder == 0 {
+			template.Steps[i].StepOrder = i + 1
+		}
+	}
+
+	// Insert into sequence_templates collection
+	_, err := r.sequenceCollection.InsertOne(ctx, template)
+	if err != nil {
+		return fmt.Errorf("error creating sequence template: %w", err)
+	}
+
+	return nil
+}
+
+// List lists sequence templates with filters
+func (r *MongoTemplateRepository) List(filters SequenceTemplateFilters) ([]*models.SequenceTemplateWithSteps, error) {
+	ctx := context.Background()
+
+	filter := bson.M{}
+
+	if filters.Channel != "" {
+		filter["steps.channel"] = filters.Channel
+	}
+	if filters.IsActive != nil {
+		filter["is_active"] = *filters.IsActive
+	}
+	if filters.Search != "" {
+		filter["name"] = bson.M{"$regex": filters.Search, "$options": "i"}
+	}
+
+	limit := filters.Limit
+	if limit == 0 {
+		limit = 20
+	}
+
+	cursor, err := r.sequenceCollection.Find(ctx, filter, options.Find().
+		SetLimit(int64(limit)).
+		SetSkip(int64(filters.Offset)).
+		SetSort(bson.D{{Key: "created_at", Value: -1}}))
+	if err != nil {
+		return nil, fmt.Errorf("error listing sequence templates: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var templates []*models.SequenceTemplateWithSteps
+	if err := cursor.All(ctx, &templates); err != nil {
+		return nil, fmt.Errorf("error decoding sequence templates: %w", err)
+	}
+
+	return templates, nil
+}
+
+// GetStepCount returns the number of steps for a template
+func (r *MongoTemplateRepository) GetStepCount(templateID primitive.ObjectID) (int, error) {
+	template, err := r.GetByIDCompat(templateID)
+	if err != nil {
+		return 0, err
+	}
+	return len(template.Steps), nil
+}
+
+// UpdateSequenceTemplate updates a sequence template with its steps
+func (r *MongoTemplateRepository) UpdateSequenceTemplate(template *models.SequenceTemplateWithSteps) error {
+	ctx := context.Background()
+
+	// Update timestamp
+	template.Template.UpdatedAt = time.Now()
+
+	// Update step timestamps and template IDs
+	for i := range template.Steps {
+		template.Steps[i].TemplateID = template.Template.TemplateID
+		if template.Steps[i].StepOrder == 0 {
+			template.Steps[i].StepOrder = i + 1
+		}
+	}
+
+	filter := bson.M{"_id": template.Template.TemplateID}
+	update := bson.M{
+		"$set": bson.M{
+			"name":        template.Template.Name,
+			"description": template.Template.Description,
+			"schedule_id": template.Template.ScheduleID,
+			"version":     template.Template.Version,
+			"is_active":   template.Template.IsActive,
+			"updated_at":  template.Template.UpdatedAt,
+			"steps":       template.Steps,
+		},
+	}
+
+	result, err := r.sequenceCollection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("error updating sequence template: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return WrapNotFound(mongo.ErrNoDocuments, ErrTemplateNotFound)
+	}
+
+	return nil
+}
+
+// DeleteSequenceTemplate deletes a sequence template
+func (r *MongoTemplateRepository) DeleteSequenceTemplate(templateID primitive.ObjectID) error {
+	ctx := context.Background()
+
+	result, err := r.sequenceCollection.DeleteOne(ctx, bson.M{"_id": templateID})
+	if err != nil {
+		return fmt.Errorf("error deleting sequence template: %w", err)
+	}
+
+	if result.DeletedCount == 0 {
+		return WrapNotFound(mongo.ErrNoDocuments, ErrTemplateNotFound)
+	}
+
+	return nil
+}
+
+// Clone clones a sequence template
+func (r *MongoTemplateRepository) Clone(templateID primitive.ObjectID, newName string, createdBy primitive.ObjectID) (*models.SequenceTemplateWithSteps, error) {
+	// Get the original template
+	original, err := r.GetByIDCompat(templateID)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	newID := primitive.NewObjectID()
+
+	// Create a clone with new ID
+	clone := &models.SequenceTemplateWithSteps{
+		Template: models.SequenceTemplate{
+			TemplateID:  newID,
+			Name:        newName,
+			Description: original.Template.Description,
+			ScheduleID:  original.Template.ScheduleID,
+			Version:     1,
+			IsActive:    true,
+			CreatedBy:   createdBy,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+		Steps: make([]models.CampaignSequenceStep, len(original.Steps)),
+	}
+
+	// Copy and update step IDs for the clone
+	for i, step := range original.Steps {
+		clone.Steps[i] = step
+		clone.Steps[i].TemplateID = newID
+		clone.Steps[i].CreatedAt = now
+	}
+
+	// Save the clone
+	if err := r.CreateSequenceTemplate(clone); err != nil {
+		return nil, err
+	}
+
+	return clone, nil
+}
+
+// ValidateSequence validates a sequence template and returns validation errors
+func (r *MongoTemplateRepository) ValidateSequence(templateID primitive.ObjectID) (bool, []map[string]interface{}, error) {
+	// Get template with steps
+	template, err := r.GetByIDCompat(templateID)
+	if err != nil {
+		return false, nil, fmt.Errorf("failed to get template: %w", err)
+	}
+	if template == nil {
+		return false, nil, fmt.Errorf("template not found")
+	}
+
+	// Validate using model validation
+	validationErr := template.Validate()
+	if validationErr == nil {
+		return true, []map[string]interface{}{}, nil
+	}
+
+	// Build error list
+	errors := []map[string]interface{}{
+		{
+			"stepOrder": 0,
+			"field":     "general",
+			"message":   validationErr.Error(),
+		},
+	}
+
+	// Additional validations
+	for i, step := range template.Steps {
+		stepOrder := i + 1
+
+		// Check required fields
+		if step.Channel == "" {
+			errors = append(errors, map[string]interface{}{
+				"stepOrder": stepOrder,
+				"field":     "communicationType",
+				"message":   "Communication type is required",
+			})
+		}
+
+		if step.ContentTemplateID.IsZero() {
+			errors = append(errors, map[string]interface{}{
+				"stepOrder": stepOrder,
+				"field":     "templateId",
+				"message":   "Template is required",
+			})
+		}
+
+		if step.Body == "" {
+			errors = append(errors, map[string]interface{}{
+				"stepOrder": stepOrder,
+				"field":     "message",
+				"message":   "Message content is required",
+			})
+		}
+
+		// Email requires subject
+		if step.Channel == "email" && step.Subject == "" {
+			errors = append(errors, map[string]interface{}{
+				"stepOrder": stepOrder,
+				"field":     "subject",
+				"message":   "Subject is required for email steps",
+			})
+		}
+
+		// First step should have 0 wait days
+		if stepOrder == 1 && step.WaitDays != 0 {
+			errors = append(errors, map[string]interface{}{
+				"stepOrder": stepOrder,
+				"field":     "waitDays",
+				"message":   "First step should have 0 wait days",
+			})
+		}
+
+		// Check wait days is non-negative
+		if step.WaitDays < 0 {
+			errors = append(errors, map[string]interface{}{
+				"stepOrder": stepOrder,
+				"field":     "waitDays",
+				"message":   "Wait days cannot be negative",
+			})
+		}
+	}
+
+	isValid := len(errors) == 0
+	return isValid, errors, nil
+}
