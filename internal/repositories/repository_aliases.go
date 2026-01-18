@@ -1,6 +1,11 @@
 package repositories
 
-import "github.com/white/user-management/pkg/mongodb"
+import (
+
+	"github.com/white/user-management/pkg/mongodb"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+
+)
 
 // Repository type aliases for backwards compatibility with the service layer.
 // These aliases map the legacy repository type names to the MongoDB implementations.
@@ -31,4 +36,18 @@ func NewSessionRepository(client *mongodb.Client) *MongoUserRepository {
 
 func NewPasswordResetRepository(client *mongodb.Client) *MongoUserRepository {
 	return NewMongoUserRepository(client)
+}
+
+// SequenceTemplateFilters contains filters for querying sequence templates
+type SequenceTemplateFilters struct {
+	Channel   string
+	IsActive  *bool
+	Category  string
+	Tags      []string
+	Search    string
+	CreatedBy primitive.ObjectID
+	Limit     int
+	Offset    int
+	SortBy    string
+	SortOrder string
 }
