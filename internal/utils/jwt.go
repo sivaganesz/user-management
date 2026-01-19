@@ -157,3 +157,112 @@ func (s *JWTService) ValidateTokenAndGetUserID(tokenString string) (primitive.Ob
 	}
 	return userId, nil
 }
+
+// ValidateAccessTokenDualAlg validates a token with dual algorithm support
+// Tries RS256 first (via JWKS), then falls back to HS256 (shared secret)
+func (s *JWTService) ValidateAccessTokenDualAlg(tokenString string, jwksCache *JWKSCache, sharedSecret string) (*AccessTokenClaims, error) {
+	// Parse token without validation to detect algorithm
+	unverifiedToken, _, err := new(jwt.Parser).ParseUnverified(tokenString, &AccessTokenClaims{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse token: %w", err)
+	}
+
+	algorithm := unverifiedToken.Method.Alg()
+
+	// Handle RS256 (via JWKS)
+	if algorithm == "RS256" {
+		// If JWKS cache isn't configured, fall back to validating with the service's public key.
+		// This keeps RS256 working in local/dev environments without JWKS.
+		if jwksCache == nil {
+			return s.ValidateAccessToken(tokenString)
+		}
+
+		claims, err := s.validateRS256WithJWKS(tokenString, jwksCache)
+		if err != nil {
+			return nil, fmt.Errorf("RS256 validation failed: %w", err)
+		}
+
+		return claims, nil
+	}
+
+	// Handle HS256 (shared secret)
+	if algorithm == "HS256" {
+		if sharedSecret == "" {
+			return nil, fmt.Errorf("shared secret not configured for HS256 validation")
+		}
+
+		claims, err := s.validateHS256(tokenString, sharedSecret)
+		if err != nil {
+			return nil, fmt.Errorf("HS256 validation failed: %w", err)
+		}
+
+		return claims, nil
+	}
+
+	return nil, fmt.Errorf("unsupported algorithm: %s (only RS256 and HS256 are supported)", algorithm)
+}
+
+// validateRS256WithJWKS validates an RS256 token using JWKS
+func (s *JWTService) validateRS256WithJWKS(tokenString string, jwksCache *JWKSCache) (*AccessTokenClaims, error) {
+	// Parse token to get kid from header
+	unverifiedToken, _, err := new(jwt.Parser).ParseUnverified(tokenString, &AccessTokenClaims{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse token: %w", err)
+	}
+
+	// Get kid from header
+	kidInterface, exists := unverifiedToken.Header["kid"]
+	if !exists {
+		// If no kid, try using the service's public key
+		return s.ValidateAccessToken(tokenString)
+	}
+
+	kid, ok := kidInterface.(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid kid type in token header")
+	}
+
+	// Get public key from JWKS cache
+	publicKey, err := jwksCache.GetPublicKey(kid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get public key: %w", err)
+	}
+
+	// Validate token with public key
+	token, err := jwt.ParseWithClaims(tokenString, &AccessTokenClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return publicKey, nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("token validation failed: %w", err)
+	}
+
+	if claims, ok := token.Claims.(*AccessTokenClaims); ok && token.Valid {
+		return claims, nil
+	}
+
+	return nil, fmt.Errorf("invalid token")
+}
+
+// validateHS256 validates an HS256 token using shared secret
+func (s *JWTService) validateHS256(tokenString string, sharedSecret string) (*AccessTokenClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &AccessTokenClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(sharedSecret), nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("token validation failed: %w", err)
+	}
+
+	if claims, ok := token.Claims.(*AccessTokenClaims); ok && token.Valid {
+		return claims, nil
+	}
+
+	return nil, fmt.Errorf("invalid token")
+}
