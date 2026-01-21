@@ -13,14 +13,16 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 	httpSwagger "github.com/swaggo/http-swagger"
 	"github.com/white/user-management/config"
 	"github.com/white/user-management/internal/handlers"
 	"github.com/white/user-management/internal/middleware"
 
 	"github.com/white/user-management/internal/repositories"
-	// "github.com/white/user-management/internal/services"
+	"github.com/white/user-management/internal/services"
 	"github.com/white/user-management/internal/utils"
+	"github.com/white/user-management/internal/cache"
 	"github.com/white/user-management/pkg/kafka"
 	"github.com/white/user-management/pkg/mongodb"
 	"github.com/white/user-management/pkg/smtp"
@@ -98,6 +100,36 @@ func main() {
 		log.Println("Warning: SMTP_HOST not configured. SMTP email will not be available.")
 	}
 
+		// Initialize Redis client for caching (optional - gracefully handle if not configured)
+	var redisClient *redis.Client
+	var templateCache *cache.TemplateCache
+	redisURL := os.Getenv("REDIS_URL")
+
+	if redisURL != "" {
+		opt, err := redis.ParseURL(redisURL)
+		if err != nil {
+			log.Printf("Warning: Failed to parse Redis URL: %v. Caching will not be available.", err)
+		} else {
+			redisClient = redis.NewClient(opt)
+			// Test connection
+			ctx := context.Background()
+			_, err = redisClient.Ping(ctx).Result()
+			if err != nil {
+				log.Printf("Warning: Redis connection failed: %v. Caching will not be available.", err)
+				redisClient = nil
+			} else {
+				templateCache = cache.NewTemplateCache(redisClient)
+				log.Println("Redis client initialized (caching enabled)")
+			}
+		}
+	} else {
+		log.Println("Warning: REDIS_URL not configured. Caching will not be available.")
+	}
+
+	// Prevent "declared and not used" errors for optional external clients
+	_ = templateCache
+
+
 	// =====================================================
 	// MONGODB REPOSITORIES
 	// =====================================================
@@ -106,6 +138,9 @@ func main() {
 	// mongoUserRepo := repositories.NewMongoUserRepository(mongoClient)
 	// Settings repository (User Settings, Company Settings, Notifications, Audit Logs)
 	settingsRepo := repositories.NewSettingsRepository(mongoClient)
+	// Permission repository (RBAC - Role-Based Access Control)
+	permissionRepo := repositories.NewPermissionRepository(mongoClient)
+
 	// log.Println("MongoDB repositories initialized (all modules including Phase 3)")
 	// emailRepo := repositories.NewMongoEmailRepository(mongoClient)
 
@@ -117,6 +152,10 @@ func main() {
 	// Event Publisher Service (Communications Hub - Kafka Event Publishing)
 	// _ = services.NewEventPublisher(kafkaProducer)
 	// log.Println("Event publisher service initialized")
+
+	// RBAC Service (Role-Based Access Control with Redis caching)
+	rbacService := services.NewRBACService(permissionRepo, redisClient)
+	log.Println("RBAC Service initialized with Redis caching")
 
 	// =====================================================
 	// MONGODB HANDLERS (TASK GROUP 1: MongoDB Migration Complete)
@@ -173,6 +212,7 @@ func main() {
 			PublicKeyPath:      "./secrets/jwt/public.pem",
 			AccessTokenExpiry:  2880, // 2 days (48 hours) in minutes for development
 			RefreshTokenExpiry: 7,    // 7 days
+			SharedSecret:       firstNonEmpty(os.Getenv("JWT_SHARED_SECRET"), os.Getenv("JWT_SECRET")),
 		},
 		Server: config.ServerConfig{
 			Environment: "development",
@@ -185,9 +225,15 @@ func main() {
 		log.Fatalf("Failed to initialize JWT service: %v", err)
 	}
 	log.Println("JWT service initialized")
+	log.Printf("JWT HS256 shared secret configured: %t", cfg.JWT.SharedSecret != "")
 
+	// Initialize JWT middleware (and load DB-backed RBAC context for authZ)
+	baseAuthMiddleware := middleware.JWTAuthDualAlg(jwtService, nil, cfg.JWT.SharedSecret)
+	authMiddleware := func(h http.Handler) http.Handler {
+		return baseAuthMiddleware(middleware.RBACContext(rbacService)(h))
+	}
 	// Initialize JWT middleware
-	authMiddleware := middleware.JWTAuth(jwtService)
+	// authMiddleware := middleware.JWTAuth(jwtService)
 
 	// Prevent "declared and not used" errors (Task Group 1)
 	_ = api            // Will be used in future task groups for route registration
@@ -203,6 +249,11 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+		// Convenience wrapper: auth + permission check (RBAC)
+	requirePerm := func(permission string, hf http.HandlerFunc) http.Handler {
+		return authMiddleware(middleware.RequirePermission(permission)(http.HandlerFunc(hf)))
+	}
+	_ = requirePerm
 	// =====================================================
 	// Authentication Routes (MongoDB-based)
 	// =====================================================
@@ -289,6 +340,16 @@ func getEnvWithDefault(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// firstNonEmpty returns the first non-empty string from the provided values.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // corsMiddleware adds CORS headers to responses.

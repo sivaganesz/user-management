@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/white/user-management/internal/models"
 	"github.com/white/user-management/internal/utils"
 	"github.com/white/user-management/pkg/uuid"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -179,6 +180,52 @@ func JWTAuthDualAlg(jwtService *utils.JWTService, jwksCache *utils.JWKSCache, sh
 
 			// Call next handler with updated context
 			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// RequirePermission is a middleware that checks if user has a specific permission
+func RequirePermission(permission string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Get permissions from context (set by JWTAuth middleware)
+			permissionsInterface := r.Context().Value(PermissionsKey)
+			if permissionsInterface == nil {
+				respondWithJSON(w, http.StatusForbidden, ErrorResponse{
+					Error: ErrorDetail{
+						Code:    "PERMISSION_DENIED",
+						Message: "User permissions not found",
+					},
+				})
+				return
+			}
+
+			permissions, ok := permissionsInterface.([]string)
+			if !ok {
+				respondWithJSON(w, http.StatusInternalServerError, ErrorResponse{
+					Error: ErrorDetail{
+						Code:    "INTERNAL_ERROR",
+						Message: "Invalid permissions format",
+					},
+				})
+				return
+			}
+
+			// Check if user has the required permission (supports wildcards)
+			hasPermission := models.HasPermission(permissions, permission)
+
+			if !hasPermission {
+				respondWithJSON(w, http.StatusForbidden, ErrorResponse{
+					Error: ErrorDetail{
+						Code:    "PERMISSION_DENIED",
+						Message: "You don't have permission to perform this action",
+					},
+				})
+				return
+			}
+
+			// Call next handler
+			next.ServeHTTP(w, r)
 		})
 	}
 }
