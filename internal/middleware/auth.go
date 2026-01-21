@@ -19,6 +19,7 @@ const (
 	RoleKey        = "role"
 	TeamKey        = "team"
 	PermissionsKey = "permissions"
+	DataScopeKey   = "data_scope"
 )
 
 type ErrorResponse struct {
