@@ -6,20 +6,19 @@ import (
 	"strings"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // MongoTemplate represents a communication template in MongoDB
 // This is the SINGLE source of truth for templates - no conversion needed
 // Collection: templates
 type MongoTemplate struct {
-	ID          primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	TenantID    primitive.ObjectID `bson:"tenant_id,omitempty" json:"tenantId,omitempty"`
-	Name        string             `bson:"name" json:"name"`
-	Description string             `bson:"description,omitempty" json:"description,omitempty"`
-	Type        string             `bson:"type,omitempty" json:"type,omitempty"`       // Deprecated: use Channel instead
-	Channel     string             `bson:"channel" json:"channel"`                     // email, sms, whatsapp, linkedin
-	Status      string             `bson:"status" json:"status"`                       // draft, active, archived
+	ID          string `bson:"_id,omitempty" json:"id"`
+	TenantID    string `bson:"tenant_id,omitempty" json:"tenantId,omitempty"`
+	Name        string `bson:"name" json:"name"`
+	Description string `bson:"description,omitempty" json:"description,omitempty"`
+	Type        string `bson:"type,omitempty" json:"type,omitempty"` // Deprecated: use Channel instead
+	Channel     string `bson:"channel" json:"channel"`               // email, sms, whatsapp, linkedin
+	Status      string `bson:"status" json:"status"`                 // draft, active, archived
 
 	// Content storage - flexible map for channel-specific fields
 	// Email: subject, body_html, body_text, pre_header
@@ -27,8 +26,8 @@ type MongoTemplate struct {
 	// WhatsApp: header, body, footer, buttons
 	// LinkedIn: body, message_type
 	Content      map[string]string `bson:"content,omitempty" json:"content,omitempty"`
-	Subject      string            `bson:"subject,omitempty" json:"subject,omitempty"`   // Convenience field for email
-	Body         string            `bson:"body,omitempty" json:"message,omitempty"`      // Main body content, JSON as "message" for frontend
+	Subject      string            `bson:"subject,omitempty" json:"subject,omitempty"`     // Convenience field for email
+	Body         string            `bson:"body,omitempty" json:"message,omitempty"`        // Main body content, JSON as "message" for frontend
 	Variables    []string          `bson:"variables,omitempty" json:"variables,omitempty"` // Extracted merge tags
 	CustomFields map[string]string `bson:"custom_fields,omitempty" json:"customFields,omitempty"`
 
@@ -41,18 +40,18 @@ type MongoTemplate struct {
 	IsSystem bool `bson:"is_system,omitempty" json:"isSystem,omitempty"` // System templates cannot be deleted
 
 	// Timestamps
-	CreatedAt   time.Time          `bson:"created_at" json:"createdAt"`
-	UpdatedAt   time.Time          `bson:"updated_at" json:"updatedAt"`
-	CreatedBy   primitive.ObjectID `bson:"created_by,omitempty" json:"createdBy,omitempty"`
-	PublishedAt *time.Time         `bson:"published_at,omitempty" json:"publishedAt,omitempty"`
-	PublishedBy primitive.ObjectID `bson:"published_by,omitempty" json:"publishedBy,omitempty"`
+	CreatedAt   time.Time  `bson:"created_at" json:"createdAt"`
+	UpdatedAt   time.Time  `bson:"updated_at" json:"updatedAt"`
+	CreatedBy   string     `bson:"created_by,omitempty" json:"createdBy,omitempty"`
+	PublishedAt *time.Time `bson:"published_at,omitempty" json:"publishedAt,omitempty"`
+	PublishedBy string     `bson:"published_by,omitempty" json:"publishedBy,omitempty"`
 
 	// Frontend filter fields
-	ForStage     []string           `bson:"for_stage,omitempty" json:"forStage,omitempty"`         // Funnel stages (prospect, mql, sql, etc.)
-	Industries   []string           `bson:"industries,omitempty" json:"industries,omitempty"`       // Industry targeting
-	ApprovalFlag string             `bson:"approval_flag,omitempty" json:"approvalFlag,omitempty"` // green, yellow, red
-	AiEnhanced   bool               `bson:"ai_enhanced,omitempty" json:"aiEnhanced,omitempty"`     // AI-generated content
-	ServiceID    primitive.ObjectID `bson:"service_id,omitempty" json:"serviceId,omitempty"`       // Reference to services collection
+	ForStage     []string `bson:"for_stage,omitempty" json:"forStage,omitempty"`         // Funnel stages (prospect, mql, sql, etc.)
+	Industries   []string `bson:"industries,omitempty" json:"industries,omitempty"`      // Industry targeting
+	ApprovalFlag string   `bson:"approval_flag,omitempty" json:"approvalFlag,omitempty"` // green, yellow, red
+	AiEnhanced   bool     `bson:"ai_enhanced,omitempty" json:"aiEnhanced,omitempty"`     // AI-generated content
+	ServiceID    string   `bson:"service_id,omitempty" json:"serviceId,omitempty"`       // Reference to services collection
 
 	// WhatsApp Meta approval fields
 	MetaTemplateName string     `bson:"meta_template_name,omitempty" json:"metaTemplateName,omitempty"`

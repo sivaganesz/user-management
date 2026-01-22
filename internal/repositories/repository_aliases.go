@@ -18,6 +18,9 @@ type UserRepository = MongoUserRepository
 type UserManagementRepository = MongoUserRepository
 type SessionRepository = MongoUserRepository
 type PasswordResetRepository = MongoUserRepository
+type TemplateRepository = MongoTemplateRepository
+
+
 
 // RegionalDashboardRepository is defined in mongo_regional_dashboard_repository.go
 type UserSettingsRepository = MongoUserRepository

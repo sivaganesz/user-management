@@ -595,3 +595,12 @@ func (r *MongoTemplateRepository) ValidateSequence(templateID primitive.ObjectID
 	isValid := len(errors) == 0
 	return isValid, errors, nil
 }
+
+// =============================================================================
+// Template Handler Compatibility Methods
+// =============================================================================
+
+// CreateTemplateCompat creates a template (no context)
+func (r *MongoTemplateRepository) CreateTemplateCompat(template *models.MongoTemplate) error {
+	return r.Create(context.Background(), template)
+}
