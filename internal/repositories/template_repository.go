@@ -55,13 +55,11 @@ func (r *MongoTemplateRepository) Create(ctx context.Context, template *models.M
 	}
 
 	// Insert the document
-	result, err := r.collection.InsertOne(ctx, template)
+	_ , err := r.collection.InsertOne(ctx, template)
 	if err != nil {
 		return fmt.Errorf("error creating template: %w", err)
 	}
 
-	// Set the generated ID
-	template.ID = result.InsertedID.(primitive.ObjectID)
 	return nil
 }
 

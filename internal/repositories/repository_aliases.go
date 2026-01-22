@@ -19,6 +19,7 @@ type UserManagementRepository = MongoUserRepository
 type SessionRepository = MongoUserRepository
 type PasswordResetRepository = MongoUserRepository
 type TemplateRepository = MongoTemplateRepository
+type ActivityRepository = MongoActivityRepository
 
 
 

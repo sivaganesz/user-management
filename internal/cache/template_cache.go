@@ -8,7 +8,6 @@ import (
 
 	"github.com/white/user-management/internal/models"
 	"github.com/redis/go-redis/v9"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // TemplateCache provides Redis caching for templates
@@ -27,7 +26,7 @@ func NewTemplateCache(client *redis.Client) *TemplateCache {
 
 // Get retrieves a template from cache
 // Returns error if cache miss or deserialization fails
-func (c *TemplateCache) Get(tenantID, templateID primitive.ObjectID) (*models.MongoTemplate, error) {
+func (c *TemplateCache) Get(tenantID, templateID string) (*models.MongoTemplate, error) {
 	ctx := context.Background()
 	key := c.buildKey(tenantID, templateID)
 
@@ -72,7 +71,7 @@ func (c *TemplateCache) Set(template *models.MongoTemplate) error {
 
 // Delete removes a template from cache
 // Used for cache invalidation on update/delete/publish/unpublish
-func (c *TemplateCache) Delete(tenantID, templateID primitive.ObjectID) error {
+func (c *TemplateCache) Delete(tenantID, templateID string) error {
 	ctx := context.Background()
 	key := c.buildKey(tenantID, templateID)
 
@@ -86,6 +85,6 @@ func (c *TemplateCache) Delete(tenantID, templateID primitive.ObjectID) error {
 
 // buildKey creates the Redis key for a template
 // Format: template:{tenant_id}:{template_id}
-func (c *TemplateCache) buildKey(tenantID, templateID primitive.ObjectID) string {
-	return fmt.Sprintf("template:%s:%s", tenantID.String(), templateID.String())
+func (c *TemplateCache) buildKey(tenantID, templateID string) string {
+	return fmt.Sprintf("template:%s:%s", tenantID, templateID)
 }
