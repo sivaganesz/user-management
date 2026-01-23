@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/white/user-management/internal/cache"
 	"github.com/white/user-management/internal/models"
 	"github.com/white/user-management/internal/repositories"
@@ -243,3 +244,228 @@ func (h *TemplateHandler) CreateTemplate(w http.ResponseWriter, r *http.Request)
 	// Return template directly (MongoTemplate has proper JSON tags)
 	respondWithJSON(w, http.StatusCreated, template)
 }
+
+// UpdateTemplate godoc
+// @Summary Update a template
+// @Description Updates an existing template. Only draft templates should be updated directly. For published templates, consider creating a new version.
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param id path string true "Template ID (UUID)"
+// @Param template body models.UpdateTemplateRequest true "Template update request"
+// @Success 200 {object} models.MongoTemplate
+// @Failure 400 {object} map[string]string "Invalid request or attempting to update published template"
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 404 {object} map[string]string "Template not found"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /api/v1/templates/{id} [put]
+// @Security BearerAuth
+func (h *TemplateHandler) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	ctx := context.Background()
+	templateID := vars["id"]
+	err := uuid.ValidateUUID(templateID)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid template ID format")
+		return
+	}
+
+	var req models.UpdateTemplateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+
+	// Get user ID from context
+	var updatedBy string
+	if userID, ok := r.Context().Value("user_id").(string); ok {
+		updatedBy = userID
+	} else {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	// Get tenant ID from context (with fallback to user ID)
+	tenantID, err := h.getTenantID(r)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid tenant ID")
+		return
+	}
+
+	// Fetch existing template
+	template, err := h.templateRepo.GetTemplateByIDCompat(tenantID, templateID)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "Template not found: "+err.Error())
+		return
+	}
+
+	// Enforce RBAC Data Scope (campaigns scope applies to templates)
+	dataScope, claims, err := h.getCampaignScope(r)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	if _, denyAll := services.BuildScopeFilter("campaigns", dataScope, claims); denyAll || !services.IsInScope("campaigns", dataScope, claims, template) {
+		respondWithError(w, http.StatusForbidden, "Permission denied")
+		return
+	}
+
+	// Check if template can be edited
+	if !template.CanEdit() {
+		respondWithError(w, http.StatusBadRequest, "System templates cannot be edited")
+		return
+	}
+
+	// Warn if updating published template
+	if template.Status == "published" {
+		// Allow updates but user should be aware - consider adding a warning header
+		w.Header().Set("X-Warning", "Updating published template - consider creating a new version")
+	}
+
+	// Apply updates
+	if req.Name != "" {
+		template.Name = req.Name
+	}
+	if req.Description != "" {
+		template.Description = req.Description
+	}
+	if req.Content != nil && len(req.Content) > 0 {
+		template.Content = req.Content
+		// Re-extract merge tags after content update
+		template.Variables = template.ExtractMergeTags()
+	}
+	if req.CustomFields != nil {
+		template.CustomFields = req.CustomFields
+	}
+	if req.Tags != nil {
+		template.Tags = req.Tags
+	}
+
+	// Apply frontend-compatible fields
+	if req.ForStage != nil {
+		template.ForStage = req.ForStage
+	}
+	if req.Industries != nil {
+		template.Industries = req.Industries
+	}
+	if req.ApprovalFlag != "" {
+		template.ApprovalFlag = req.ApprovalFlag
+	}
+	if req.AiEnhanced != nil {
+		template.AiEnhanced = *req.AiEnhanced
+	}
+
+	// Apply channel-specific fields (email: subject, message)
+	if req.Subject != "" {
+		if template.Content == nil {
+			template.Content = make(map[string]string)
+		}
+		template.Content["subject"] = req.Subject
+	}
+	if req.Message != "" {
+		if template.Content == nil {
+			template.Content = make(map[string]string)
+		}
+		template.Content["body"] = req.Message
+		// Re-extract merge tags from message
+		template.Variables = template.ExtractMergeTags()
+	}
+
+	// Apply status update
+	if req.Status != "" {
+		template.Status = req.Status
+	}
+
+	// Apply LinkedIn-specific fields
+	if req.TemplateType != "" {
+		template.TemplateType = req.TemplateType
+	}
+
+	// Apply WhatsApp-specific fields
+	if req.MetaTemplateName != "" {
+		template.MetaTemplateName = req.MetaTemplateName
+	}
+	if req.Category != "" {
+		if template.Content == nil {
+			template.Content = make(map[string]string)
+		}
+		template.Content["category"] = req.Category
+	}
+	if req.Language != "" {
+		if template.Content == nil {
+			template.Content = make(map[string]string)
+		}
+		template.Content["language"] = req.Language
+	}
+
+	// Apply service ID (validate UUID)
+	if req.ServiceID != "" {
+		if err := uuid.ValidateUUID(req.ServiceID); err != nil {
+			respondWithError(w, http.StatusBadRequest, "Invalid service ID format")
+			return
+		}
+		template.ServiceID = req.ServiceID
+	}
+
+	// Update timestamp
+	template.UpdatedAt = time.Now()
+
+	// Validate merge tags (returns warnings for undefined tags)
+	mergeTagWarnings := template.ValidateMergeTags()
+	if len(mergeTagWarnings) > 0 {
+		// Add warnings to response header (non-fatal)
+		w.Header().Set("X-Merge-Tag-Warnings", strings.Join(mergeTagWarnings, "; "))
+	}
+
+	// Validate template after updates
+	if err := template.Validate(); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Template validation failed: "+err.Error())
+		return
+	}
+
+	// Update in database
+	if err := h.templateRepo.UpdateTemplateCompat(template); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to update template: "+err.Error())
+		return
+	}
+
+	// Invalidate cache (template content changed)
+	if h.cache != nil {
+		_ = h.cache.Delete(tenantID, templateID)
+	}
+
+	// Publish Kafka event (fire-and-forget)
+	if h.kafkaProducer != nil {
+		event := map[string]interface{}{
+			"event_type":  "template.updated",
+			"template_id": template.ID,
+			"tenant_id":   template.TenantID,
+			"updated_by":  updatedBy,
+			"updated_at":  template.UpdatedAt.Unix(),
+		}
+		_ = h.kafkaProducer.PublishJSON(ctx, "template.updated", event)
+	}
+
+	// Log activity
+	now := time.Now()
+	activity := &models.Activity{
+		ID:            uuid.MustNewUUID(),
+		ActivityType:  "note",
+		Title:         "Template Updated",
+		Description:   "Template updated: " + template.Name,
+		Owner:         updatedBy,
+		RelatedToType: "template",
+		RelatedToID:   template.ID,
+		Status:        "completed",
+		Priority:      "medium",
+		CreatedBy:     updatedBy,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	_ = h.activityRepo.CreateActivityCompat(activity)
+
+	// Return frontend-compatible response
+	respondWithJSON(w, http.StatusOK, template)
+}
+
+

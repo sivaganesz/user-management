@@ -29,7 +29,7 @@ func NewMongoTemplateRepository(client *mongodb.Client) *MongoTemplateRepository
 }
 
 // GetByID retrieves a template by its ObjectID
-func (r *MongoTemplateRepository) GetByID(ctx context.Context, id primitive.ObjectID) (*models.MongoTemplate, error) {
+func (r *MongoTemplateRepository) GetByID(ctx context.Context, id string) (*models.MongoTemplate, error) {
 	var template models.MongoTemplate
 
 	filter := bson.M{"_id": id}
@@ -601,4 +601,15 @@ func (r *MongoTemplateRepository) ValidateSequence(templateID primitive.ObjectID
 // CreateTemplateCompat creates a template (no context)
 func (r *MongoTemplateRepository) CreateTemplateCompat(template *models.MongoTemplate) error {
 	return r.Create(context.Background(), template)
+}
+
+// UpdateTemplateCompat updates a template (no context)
+func (r *MongoTemplateRepository) UpdateTemplateCompat(template *models.MongoTemplate) error {
+	template.UpdatedAt = time.Now()
+	return r.Update(context.Background(), template)
+}
+
+// GetTemplateByIDCompat retrieves a template by ID (no context)
+func (r *MongoTemplateRepository) GetTemplateByIDCompat(tenantID, templateID string) (*models.MongoTemplate, error) {
+	return r.GetByID(context.Background(), templateID)
 }
