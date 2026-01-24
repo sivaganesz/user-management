@@ -8,8 +8,8 @@ import (
 
 // SettingsUserProfile represents user profile settings for the settings page
 type SettingsUserProfile struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	UserID    primitive.ObjectID `bson:"user_id" json:"userId"`
+	ID        string             `bson:"_id,omitempty" json:"id"`
+	UserID    string             `bson:"user_id" json:"userId"`
 	FirstName string             `bson:"first_name" json:"firstName"`
 	LastName  string             `bson:"last_name" json:"lastName"`
 	Email     string             `bson:"email" json:"email"`
@@ -33,8 +33,8 @@ type SettingsUpdateProfileRequest struct {
 
 // SettingsEmailSignature represents user's email signature settings
 type SettingsEmailSignature struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	UserID    primitive.ObjectID `bson:"user_id" json:"userId"`
+	ID        string			 `bson:"_id,omitempty" json:"id"`
+	UserID    string			 `bson:"user_id" json:"userId"`
 	Signature string             `bson:"signature" json:"signature"`
 	Enabled   bool               `bson:"enabled" json:"enabled"`
 	UpdatedAt time.Time          `bson:"updated_at" json:"updatedAt"`
@@ -48,8 +48,8 @@ type SettingsUpdateEmailSignatureRequest struct {
 
 // SettingsUserSecuritySettings represents user's security settings
 type SettingsUserSecuritySettings struct {
-	ID                 primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	UserID             primitive.ObjectID `bson:"user_id" json:"userId"`
+	ID                 string             `bson:"_id,omitempty" json:"id"`
+	UserID             string             `bson:"user_id" json:"userId"`
 	TwoFactorEnabled   bool               `bson:"two_factor_enabled" json:"twoFactorEnabled"`
 	SessionTimeout     int                `bson:"session_timeout" json:"sessionTimeout"` // minutes
 	LastPasswordChange *time.Time         `bson:"last_password_change,omitempty" json:"lastPasswordChange,omitempty"`
@@ -84,8 +84,8 @@ type SettingsWhatsAppPreferences struct {
 
 // SettingsCommunicationPreferences represents user's communication preferences
 type SettingsCommunicationPreferences struct {
-	ID                  primitive.ObjectID            `bson:"_id,omitempty" json:"id"`
-	UserID              primitive.ObjectID            `bson:"user_id" json:"userId"`
+	ID                  string 			              `bson:"_id,omitempty" json:"id"`
+	UserID              string 			              `bson:"user_id" json:"userId"`
 	DefaultChannels     []string                      `bson:"default_channels" json:"defaultChannels"`
 	EmailPreferences    SettingsEmailPreferences      `bson:"email_preferences" json:"emailPreferences"`
 	WhatsAppPreferences SettingsWhatsAppPreferences   `bson:"whatsapp_preferences" json:"whatsappPreferences"`
@@ -136,8 +136,8 @@ type SettingsBrowserNotificationSettings struct {
 
 // SettingsNotificationSettings represents user's notification settings
 type SettingsNotificationSettings struct {
-	ID                   primitive.ObjectID                  `bson:"_id,omitempty" json:"id"`
-	UserID               primitive.ObjectID                  `bson:"user_id" json:"userId"`
+	ID                   string                  `bson:"_id,omitempty" json:"id"`
+	UserID               string                  `bson:"user_id" json:"userId"`
 	EmailNotifications   SettingsEmailNotificationSettings   `bson:"email_notifications" json:"emailNotifications"`
 	BrowserNotifications SettingsBrowserNotificationSettings `bson:"browser_notifications" json:"browserNotifications"`
 	UpdatedAt            time.Time                           `bson:"updated_at" json:"updatedAt"`

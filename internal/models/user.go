@@ -2,15 +2,13 @@ package models
 
 import (
 	"time"
-
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 
 // MongoUser represents a user in the MongoDB database
 // Collection: users
 type MongoUser struct {
-	ID             primitive.ObjectID    `bson:"_id,omitempty" json:"id"`
+	ID             string                `bson:"_id,omitempty" json:"id"`
 	Email          string                `bson:"email" json:"email"`
 	PasswordHash   string                `bson:"password_hash" json:"-"` // Never expose in JSON
 	Name           string                `bson:"name" json:"name"`
@@ -29,7 +27,7 @@ type MongoUser struct {
 
 }
 type User struct {
-	ID           primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	ID           string `bson:"_id,omitempty" json:"id"`
 	Email        string             `bson:"email" json:"email"`
 	PasswordHash string             `bson:"password_hash" json:"-"` // Never expose password hash in JSON
 	Name         string             `bson:"name" json:"name"`
@@ -53,7 +51,7 @@ const (
 )
 
 type UserProfile struct {
-	ID          primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	ID          string `bson:"_id,omitempty" json:"id"`
 	Email       string             `bson:"email" json:"email"`
 	Name        string             `bson:"name" json:"name"`
 	Role        string             `bson:"role" json:"role"`
@@ -172,9 +170,9 @@ func (u *User) ToProfile() UserProfile {
 
 
 type TwoFAOTP struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty"`
-	UserID    primitive.ObjectID `bson:"user_id"`
-	TempToken primitive.ObjectID `bson:"temp_token"`
+	ID        string `bson:"_id,omitempty"`
+	UserID    string `bson:"user_id"`
+	TempToken string `bson:"temp_token"`
 	OTPHash   string             `bson:"otp_hash"`
 	ExpiresAt time.Time          `bson:"expires_at"`
 	Used      bool               `bson:"used"`

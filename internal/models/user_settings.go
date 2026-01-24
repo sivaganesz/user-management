@@ -8,7 +8,7 @@ import (
 
 // UserSettings represents complete user settings and preferences
 type UserSettings struct {
-	UserID primitive.ObjectID `json:"user_id"`
+	UserID string `json:"user_id"`
 
 	// User Profile Information
 	Email       string   `json:"email"`

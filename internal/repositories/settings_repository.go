@@ -1,16 +1,18 @@
 package repositories
 
-import(
+import (
 	"context"
 	"time"
+
 	// "fmt"
 
 	"github.com/white/user-management/internal/models"
 	"github.com/white/user-management/pkg/mongodb"
+	"github.com/white/user-management/pkg/uuid"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type SettingsRepository struct {
@@ -50,7 +52,7 @@ func NewSettingsRepository(client *mongodb.Client) *SettingsRepository {
 // ==================== User Profile ====================
 
 // GetUserProfile retrieves user profile by user ID
-func (r *SettingsRepository) GetUserProfile(ctx context.Context, userID primitive.ObjectID) (*models.SettingsUserProfile, error) {
+func (r *SettingsRepository) GetUserProfile(ctx context.Context, userID string) (*models.SettingsUserProfile, error) {
 	// First check if a profile exists in user_profiles collection
 	var profile models.SettingsUserProfile
 	err := r.userProfiles.FindOne(ctx, bson.M{"user_id": userID}).Decode(&profile)
@@ -65,10 +67,10 @@ func (r *SettingsRepository) GetUserProfile(ctx context.Context, userID primitiv
 		if err != nil {
 			return nil, err
 		}
-
+		 newUUID := uuid.MustNewUUID()
 		// Create profile from user data
 		profile = models.SettingsUserProfile{
-			ID:        primitive.NewObjectID(),
+			ID:        newUUID,
 			UserID:    userID,
 			FirstName: user.Name, // Use full name as first name for now
 			LastName:  "",
@@ -91,7 +93,7 @@ func (r *SettingsRepository) GetUserProfile(ctx context.Context, userID primitiv
 }
 
 // UpdateUserProfile updates user profile
-func (r *SettingsRepository) UpdateUserProfile(ctx context.Context, userId primitive.ObjectID, update models.SettingsUpdateProfileRequest) (*models.SettingsUserProfile, error) {
+func (r *SettingsRepository) UpdateUserProfile(ctx context.Context, userId string, update models.SettingsUpdateProfileRequest) (*models.SettingsUserProfile, error) {
 	filter := bson.M{"user_id": userId}
 	updateDoc := bson.M{"$set": bson.M{"updated_at": time.Now()}}
 
@@ -127,7 +129,7 @@ func (r *SettingsRepository) UpdateUserProfile(ctx context.Context, userId primi
 // ==================== Email Signature ====================
 
 // GetEmailSignature retrieves email signature by user ID
-func (r *SettingsRepository) GetEmailSignature(ctx context.Context, userID primitive.ObjectID) (*models.SettingsEmailSignature, error) {
+func (r *SettingsRepository) GetEmailSignature(ctx context.Context, userID string) (*models.SettingsEmailSignature, error) {
 	var signature models.SettingsEmailSignature
 	err := r.emailSignatures.FindOne(ctx, bson.M{"user_id": userID}).Decode(&signature)
 	if err == mongo.ErrNoDocuments {
@@ -143,7 +145,7 @@ func (r *SettingsRepository) GetEmailSignature(ctx context.Context, userID primi
 }
 
 // UpdateEmailSignature updates email signature
-func (r *SettingsRepository) UpdateEmailSignature(ctx context.Context, userID primitive.ObjectID, update models.SettingsUpdateEmailSignatureRequest) (*models.SettingsEmailSignature, error) {
+func (r *SettingsRepository) UpdateEmailSignature(ctx context.Context, userID string, update models.SettingsUpdateEmailSignatureRequest) (*models.SettingsEmailSignature, error) {
 	filter := bson.M{"user_id": userID}
 	updateDoc := bson.M{
 		"$set": bson.M{
@@ -167,7 +169,7 @@ func (r *SettingsRepository) UpdateEmailSignature(ctx context.Context, userID pr
 
 // ==================== Security Settings ====================
 // GetSecuritySettings retrieves security settings by user ID
-func (r *SettingsRepository) GetSecuritySettings(ctx context.Context, userID primitive.ObjectID) (*models.SettingsUserSecuritySettings, error) {
+func (r *SettingsRepository) GetSecuritySettings(ctx context.Context, userID string) (*models.SettingsUserSecuritySettings, error) {
 	var settings models.SettingsUserSecuritySettings
 	err := r.securitySettings.FindOne(ctx, bson.M{"user_id": userID}).Decode(&settings)
 	if err == mongo.ErrNoDocuments {
@@ -183,7 +185,7 @@ func (r *SettingsRepository) GetSecuritySettings(ctx context.Context, userID pri
 }
 
 // UpdateSecuritySettings updates security settings
-func (r *SettingsRepository) UpdateSecuritySettings(ctx context.Context, userID primitive.ObjectID, update models.SettingsUpdateSecuritySettingsRequest) (*models.SettingsUserSecuritySettings, error) {
+func (r *SettingsRepository) UpdateSecuritySettings(ctx context.Context, userID string, update models.SettingsUpdateSecuritySettingsRequest) (*models.SettingsUserSecuritySettings, error) {
 	filter := bson.M{"user_id": userID}
 	updateDoc := bson.M{"$set": bson.M{"updated_at": time.Now()}}
 
@@ -205,7 +207,7 @@ func (r *SettingsRepository) UpdateSecuritySettings(ctx context.Context, userID 
 }
 
 // UpdateLastPasswordChange updates the last password change timestamp
-func (r *SettingsRepository) UpdateLastPasswordChange(ctx context.Context, userID primitive.ObjectID) error {
+func (r *SettingsRepository) UpdateLastPasswordChange(ctx context.Context, userID string) error {
 	filter := bson.M{"user_id": userID}
 	now := time.Now()
 	updateDoc := bson.M{
@@ -226,7 +228,7 @@ func (r *SettingsRepository) UpdateLastPasswordChange(ctx context.Context, userI
 // ==================== Communication Preferences ====================
 
 // GetCommunicationPreferences retrieves communication preferences by user ID
-func (r *SettingsRepository) GetCommunicationPreferences(ctx context.Context, userID primitive.ObjectID) (*models.SettingsCommunicationPreferences, error) {
+func (r *SettingsRepository) GetCommunicationPreferences(ctx context.Context, userID string) (*models.SettingsCommunicationPreferences, error) {
 	var prefs models.SettingsCommunicationPreferences
 	err := r.communicationPrefs.FindOne(ctx, bson.M{"user_id": userID}).Decode(&prefs)
 	if err == mongo.ErrNoDocuments {
@@ -249,7 +251,7 @@ func (r *SettingsRepository) GetCommunicationPreferences(ctx context.Context, us
 }
 
 // UpdateCommunicationPreferences updates communication preferences
-func (r *SettingsRepository) UpdateCommunicationPreferences(ctx context.Context, userID primitive.ObjectID, update *models.SettingsUpdateCommunicationPreferencesRequest) (*models.SettingsCommunicationPreferences, error) {
+func (r *SettingsRepository) UpdateCommunicationPreferences(ctx context.Context, userID string, update *models.SettingsUpdateCommunicationPreferencesRequest) (*models.SettingsCommunicationPreferences, error) {
 	filter := bson.M{"user_id": userID}
 	setFields := bson.M{"updated_at": time.Now()}
 
@@ -339,7 +341,7 @@ func (r *SettingsRepository) UpdateCompanyInfo(ctx context.Context, update *mode
 // ==================== Notification Settings ====================
 
 // GetNotificationSettings retrieves notification settings by user ID
-func (r *SettingsRepository) GetNotificationSettings(ctx context.Context, userID primitive.ObjectID) (*models.SettingsNotificationSettings, error) {
+func (r *SettingsRepository) GetNotificationSettings(ctx context.Context, userID string) (*models.SettingsNotificationSettings, error) {
 	var settings models.SettingsNotificationSettings
 	err := r.notificationSettings.FindOne(ctx, bson.M{"user_id": userID}).Decode(&settings)
 	if err == mongo.ErrNoDocuments {
@@ -363,7 +365,7 @@ func (r *SettingsRepository) GetNotificationSettings(ctx context.Context, userID
 
 
 // UpdateNotificationSettings updates notification settings
-func (r *SettingsRepository) UpdateNotificationSettings(ctx context.Context, userID primitive.ObjectID, update *models.SettingsUpdateNotificationSettingsRequest) (*models.SettingsNotificationSettings, error) {
+func (r *SettingsRepository) UpdateNotificationSettings(ctx context.Context, userID string, update *models.SettingsUpdateNotificationSettingsRequest) (*models.SettingsNotificationSettings, error) {
 	filter := bson.M{"user_id": userID}
 	setFields := bson.M{"updated_at": time.Now()}
 

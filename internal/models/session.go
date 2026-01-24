@@ -2,14 +2,12 @@ package models
 
 import (
 	"time"
-
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // Session represents an authenticated user session
 type Session struct {
-	TokenID      primitive.ObjectID `json:"token_id" bson:"token_id"`
-	UserID       primitive.ObjectID `json:"user_id" bson:"user_id"`
+	TokenID      string `json:"token_id" bson:"token_id"`
+	UserID       string `json:"user_id" bson:"user_id"`
 	RefreshToken string             `json:"refresh_token" bson:"refresh_token"`
 	IssuedAt     time.Time          `json:"issued_at" bson:"issued_at"`
 	ExpiresAt    time.Time          `json:"expires_at" bson:"expires_at"`
