@@ -7,6 +7,7 @@ import (
 
 	"github.com/white/user-management/internal/models"
 	"github.com/white/user-management/pkg/mongodb"
+	"github.com/white/user-management/pkg/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -25,7 +26,7 @@ func NewMongoUserRepository(client *mongodb.Client) *MongoUserRepository {
 	}
 }
 
-func (r *MongoUserRepository) GetByID(ctx context.Context, id primitive.ObjectID) (*models.MongoUser, error) {
+func (r *MongoUserRepository) GetByID(ctx context.Context, id string) (*models.MongoUser, error) {
 	var user models.MongoUser
 
 	filter := bson.M{"_id": id}
@@ -58,15 +59,14 @@ func (r *MongoUserRepository) Create(ctx context.Context, user *models.MongoUser
 	now := time.Now()
 	user.CreatedAt = now
 	user.UpdatedAt = now
-
-	result, err := r.collection.InsertOne(ctx, user)
+	user.ID = uuid.MustNewUUID()
+	_, err := r.collection.InsertOne(ctx, user)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
 			return fmt.Errorf("user with email %s already exists", user.Email)
 		}
 		return fmt.Errorf("error creating user: %w", err)
 	}
-	user.ID = result.InsertedID.(primitive.ObjectID)
 	return nil
 }
 
@@ -103,7 +103,7 @@ func (r *MongoUserRepository) Update(ctx context.Context, user *models.MongoUser
 }
 
 // UpdatePassword updates the user's password hash
-func (r *MongoUserRepository) UpdatePassword(ctx context.Context, id primitive.ObjectID, passwordHash string) error {
+func (r *MongoUserRepository) UpdatePassword(ctx context.Context, id string, passwordHash string) error {
 	filter := bson.M{"_id": id}
 	update := bson.M{
 		"$set": bson.M{
@@ -121,7 +121,7 @@ func (r *MongoUserRepository) UpdatePassword(ctx context.Context, id primitive.O
 }
 
 // SetOTP sets the OTP hash and expiry time for password reset
-func (r *MongoUserRepository) SetOTP(ctx context.Context, userID primitive.ObjectID, otpHash string, expiresAt time.Time) error {
+func (r *MongoUserRepository) SetOTP(ctx context.Context, userID string, otpHash string, expiresAt time.Time) error {
 	filter := bson.M{"_id": userID}
 	update := bson.M{
 		"$set": bson.M{
@@ -142,7 +142,7 @@ func (r *MongoUserRepository) SetOTP(ctx context.Context, userID primitive.Objec
 	return nil
 }
 
-func (r *MongoUserRepository) ClearOTP(ctx context.Context, userID primitive.ObjectID) error {
+func (r *MongoUserRepository) ClearOTP(ctx context.Context, userID string) error {
 	filter := bson.M{"_id": userID}
 	update := bson.M{
 		"$unset": bson.M{
@@ -236,7 +236,7 @@ func (r *MongoUserRepository) ListByTeam(ctx context.Context, team string, limit
 }
 
 // Delete removes a user by ID (soft delete recommended in production)
-func (r *MongoUserRepository) Delete(ctx context.Context, id primitive.ObjectID) error {
+func (r *MongoUserRepository) Delete(ctx context.Context, id string) error {
 	filter := bson.M{"_id": id}
 
 	result, err := r.collection.DeleteOne(ctx, filter)
@@ -266,7 +266,7 @@ func (r *MongoUserRepository) Count(ctx context.Context, region string) (int64, 
 }
 
 // UpdateLastLogin updates the last login timestamp
-func (r *MongoUserRepository) UpdateLastLogin(ctx context.Context, userID primitive.ObjectID, loginTime time.Time) error {
+func (r *MongoUserRepository) UpdateLastLogin(ctx context.Context, userID string, loginTime time.Time) error {
 	filter := bson.M{"_id": userID}
 	update := bson.M{
 		"$set": bson.M{
@@ -288,7 +288,7 @@ func (r *MongoUserRepository) UpdateLastLogin(ctx context.Context, userID primit
 }
 
 // ActivateUser activates a user account
-func (r *MongoUserRepository) ActivateUser(ctx context.Context, userID primitive.ObjectID) error {
+func (r *MongoUserRepository) ActivateUser(ctx context.Context, userID string) error {
 	filter := bson.M{"_id": userID}
 	update := bson.M{
 		"$set": bson.M{
@@ -310,7 +310,7 @@ func (r *MongoUserRepository) ActivateUser(ctx context.Context, userID primitive
 }
 
 // DeactivateUser deactivates a user account
-func (r *MongoUserRepository) DeactivateUser(ctx context.Context, userID primitive.ObjectID) error {
+func (r *MongoUserRepository) DeactivateUser(ctx context.Context, userID string) error {
 	filter := bson.M{"_id": userID}
 	update := bson.M{
 		"$set": bson.M{
@@ -363,7 +363,7 @@ func (r *MongoUserRepository) GetUsersByTeam(ctx context.Context, team string, l
 }
 
 // UpdateUserProfile updates user profile information (name, email) from UserSettingsRepository
-func (r *MongoUserRepository) UpdateUserProfile(ctx context.Context, userID primitive.ObjectID, name, email string) error {
+func (r *MongoUserRepository) UpdateUserProfile(ctx context.Context, userID string, name, email string) error {
 	filter := bson.M{"_id": userID}
 	update := bson.M{
 		"$set": bson.M{
@@ -419,7 +419,7 @@ func (r *MongoUserRepository) EnsureIndexes(ctx context.Context) error {
 // ============================================================================
 
 // GetByIDCompat retrieves a user by ID (service layer compatibility - returns models.User)
-func (r *MongoUserRepository) GetByIDCompat(id primitive.ObjectID) (*models.User, error) {
+func (r *MongoUserRepository) GetByIDCompat(id string) (*models.User, error) {
 	ctx := context.Background()
 	mongoUser, err := r.GetByID(ctx, id)
 	if err != nil {
@@ -439,13 +439,13 @@ func (r *MongoUserRepository) GetByEmailCompat(email string) (*models.User, erro
 }
 
 // UpdateLastLoginCompat updates the last login timestamp (service layer compatibility)
-func (r *MongoUserRepository) UpdateLastLoginCompat(userID primitive.ObjectID, loginTime time.Time) error {
+func (r *MongoUserRepository) UpdateLastLoginCompat(userID string, loginTime time.Time) error {
 	ctx := context.Background()
 	return r.UpdateLastLogin(ctx, userID, loginTime)
 }
 
 // UpdatePasswordCompat updates the password hash (service layer compatibility)
-func (r *MongoUserRepository) UpdatePasswordCompat(userID primitive.ObjectID, passwordHash string) error {
+func (r *MongoUserRepository) UpdatePasswordCompat(userID string, passwordHash string) error {
 	ctx := context.Background()
 	return r.UpdatePassword(ctx, userID, passwordHash)
 }
@@ -683,7 +683,7 @@ func (r *MongoUserRepository) LogActivity(activity *models.UserActivityLog) erro
 }
 
 // GetUserActivities retrieves user activities (service layer compatibility)
-func (r *MongoUserRepository) GetUserActivities(userID primitive.ObjectID, limit int) ([]*models.UserActivityLog, error) {
+func (r *MongoUserRepository) GetUserActivities(userID string, limit int) ([]*models.UserActivityLog, error) {
 	ctx := context.Background()
 	collection := r.client.Collection("user_activity_logs")
 
@@ -711,7 +711,7 @@ func (r *MongoUserRepository) GetUserActivities(userID primitive.ObjectID, limit
 // =============================================================================
 
 // GetUserSessions retrieves all active sessions for a user
-func (r *MongoUserRepository) GetUserSessions(userID primitive.ObjectID) ([]models.Session, error) {
+func (r *MongoUserRepository) GetUserSessions(userID string) ([]models.Session, error) {
 	ctx := context.Background()
 	collection := r.client.Collection("sessions")
 
@@ -736,7 +736,7 @@ func (r *MongoUserRepository) GetUserSessions(userID primitive.ObjectID) ([]mode
 }
 
 // GetSession retrieves a session by ID
-func (r *MongoUserRepository) GetSession(sessionID primitive.ObjectID) (*models.Session, error) {
+func (r *MongoUserRepository) GetSession(sessionID string) (*models.Session, error) {
 	ctx := context.Background()
 	collection := r.client.Collection("sessions")
 
@@ -754,7 +754,7 @@ func (r *MongoUserRepository) GetSession(sessionID primitive.ObjectID) (*models.
 }
 
 // TerminateSession terminates a session by marking it as revoked
-func (r *MongoUserRepository) TerminateSession(sessionID primitive.ObjectID) error {
+func (r *MongoUserRepository) TerminateSession(sessionID string) error {
 	ctx := context.Background()
 	collection := r.client.Collection("sessions")
 
@@ -779,7 +779,7 @@ func (r *MongoUserRepository) TerminateSession(sessionID primitive.ObjectID) err
 }
 
 // RefreshSession refreshes a session with new expiry time
-func (r *MongoUserRepository) RefreshSession(sessionID primitive.ObjectID, newExpiry time.Time) error {
+func (r *MongoUserRepository) RefreshSession(sessionID string, newExpiry time.Time) error {
 	ctx := context.Background()
 	collection := r.client.Collection("sessions")
 
@@ -806,7 +806,7 @@ func (r *MongoUserRepository) ListUsers(limit, offset int) ([]*models.MongoUser,
 }
 
 // GetByIDForHandler gets a user by ID (no context) - returns MongoUser
-func (r *MongoUserRepository) GetByIDForHandler(id primitive.ObjectID) (*models.MongoUser, error) {
+func (r *MongoUserRepository) GetByIDForHandler(id string) (*models.MongoUser, error) {
 	return r.GetByID(context.Background(), id)
 }
 
@@ -860,12 +860,12 @@ func (r *MongoUserRepository) ListUsersFiltered(role, region string, isActive *b
 }
 
 // ActivateUserForHandler activates a user (no context)
-func (r *MongoUserRepository) ActivateUserForHandler(userID primitive.ObjectID) error {
+func (r *MongoUserRepository) ActivateUserForHandler(userID string) error {
 	return r.ActivateUser(context.Background(), userID)
 }
 
 // DeactivateUserForHandler deactivates a user (no context)
-func (r *MongoUserRepository) DeactivateUserForHandler(userID primitive.ObjectID) error {
+func (r *MongoUserRepository) DeactivateUserForHandler(userID string) error {
 	return r.DeactivateUser(context.Background(), userID)
 }
 
@@ -874,7 +874,7 @@ func (r *MongoUserRepository) DeactivateUserForHandler(userID primitive.ObjectID
 // =============================================================================
 
 // GetUserSettings retrieves user settings including profile and preferences
-func (r *MongoUserRepository) GetUserSettings(userID primitive.ObjectID) (*models.UserSettings, error) {
+func (r *MongoUserRepository) GetUserSettings(userID string) (*models.UserSettings, error) {
 	user, err := r.GetByID(context.Background(), userID)
 	if err != nil {
 		return nil, err
@@ -922,12 +922,12 @@ func (r *MongoUserRepository) GetUserSettings(userID primitive.ObjectID) (*model
 }
 
 // GetUserByID retrieves a user by ID (handler compatibility - no context)
-func (r *MongoUserRepository) GetUserByID(userID primitive.ObjectID) (*models.MongoUser, error) {
+func (r *MongoUserRepository) GetUserByID(userID string) (*models.MongoUser, error) {
 	return r.GetByID(context.Background(), userID)
 }
 
 // UpdateUserProfileForHandler updates user profile (handler compatibility - no context)
-func (r *MongoUserRepository) UpdateUserProfileForHandler(userID primitive.ObjectID, name, email string) error {
+func (r *MongoUserRepository) UpdateUserProfileForHandler(userID string, name, email string) error {
 	return r.UpdateUserProfile(context.Background(), userID, name, email)
 }
 
