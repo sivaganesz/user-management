@@ -3,14 +3,17 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/white/user-management/internal/cache"
+	"github.com/white/user-management/internal/middleware"
 	"github.com/white/user-management/internal/models"
 	"github.com/white/user-management/internal/repositories"
+	"github.com/white/user-management/internal/services"
 	"github.com/white/user-management/pkg/kafka"
 	"github.com/white/user-management/pkg/uuid"
 )
@@ -469,3 +472,139 @@ func (h *TemplateHandler) UpdateTemplate(w http.ResponseWriter, r *http.Request)
 }
 
 
+// DeleteTemplate godoc
+// @Summary Delete a template
+// @Description Deletes a template (hard delete). System templates cannot be deleted. Removes tag associations and updates counters.
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param id path string true "Template ID (UUID)"
+// @Success 204 "No Content - Template deleted successfully"
+// @Failure 400 {object} map[string]string "Invalid template ID or cannot delete system template"
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 404 {object} map[string]string "Template not found"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /api/v1/templates/{id} [delete]
+// @Security BearerAuth
+func (h *TemplateHandler) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
+	ctx := context.Background()
+	vars := mux.Vars(r)
+	templateID := vars["id"]
+	err := uuid.ValidateUUID(templateID)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid template ID format")
+		return
+	}
+
+	// Get user ID from context
+	var deletedBy string
+	if userID, ok := r.Context().Value("user_id").(string); ok {
+		deletedBy = userID
+	} else {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	// Get tenant ID from context (with fallback to user ID)
+	tenantID, err := h.getTenantID(r)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid tenant ID")
+		return
+	}
+
+	// Fetch existing template
+	template, err := h.templateRepo.GetTemplateByIDCompat(tenantID, templateID)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "Template not found: "+err.Error())
+		return
+	}
+
+	// Enforce RBAC Data Scope (campaigns scope applies to templates)
+	dataScope, claims, err := h.getCampaignScope(r)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	if _, denyAll := services.BuildScopeFilter("campaigns", dataScope, claims); denyAll || !services.IsInScope("campaigns", dataScope, claims, template) {
+		respondWithError(w, http.StatusForbidden, "Permission denied")
+		return
+	}
+
+	// Check if template can be deleted
+	if !template.CanDelete() {
+		respondWithError(w, http.StatusBadRequest, "System templates (library) cannot be deleted")
+		return
+	}
+
+	// Remove tag associations and update counters
+	for _, tagName := range template.Tags {
+		_ = h.templateRepo.RemoveTagFromTemplateCompat(tenantID, tagName)
+	}
+
+	// Delete template
+	if err := h.templateRepo.DeleteTemplateCompat(tenantID, templateID); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to delete template: "+err.Error())
+		return
+	}
+
+	// Invalidate cache (template deleted)
+	if h.cache != nil {
+		_ = h.cache.Delete(tenantID, templateID)
+	}
+
+	// Publish Kafka event (fire-and-forget)
+	if h.kafkaProducer != nil {
+		event := map[string]interface{}{
+			"event_type":  "template.deleted",
+			"template_id": templateID,
+			"tenant_id":   tenantID,
+			"deleted_by":  deletedBy,
+			"deleted_at":  time.Now().Unix(),
+		}
+		_ = h.kafkaProducer.PublishJSON(ctx, "template.deleted", event)
+	}
+
+	// Log activity
+	now := time.Now()
+	activity := &models.Activity{
+		ID:            uuid.MustNewUUID(),
+		ActivityType:  "note",
+		Title:         "Template Deleted",
+		Description:   "Template deleted: " + template.Name,
+		Owner:         deletedBy,
+		RelatedToType: "template",
+		RelatedToID:   templateID,
+		Status:        "completed",
+		Priority:      "high",
+		CreatedBy:     deletedBy,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	_ = h.activityRepo.CreateActivityCompat(activity)
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+
+
+func (h *TemplateHandler) getCampaignScope(r *http.Request) (models.DataScope, services.ScopeClaims, error) {
+	ctx := r.Context()
+	userID, ok := ctx.Value(middleware.UserIDKey).(string)
+	if !ok {
+		return models.DataScope{}, services.ScopeClaims{}, fmt.Errorf("user ID not found")
+	}
+	team, _ := ctx.Value(middleware.TeamKey).(string)
+	// region, _ := ctx.Value(middleware.RegionKey).(string)
+	region := ""
+
+	dataScope := models.DataScope{Customers: "all", Campaigns: "all"}
+	if ds, ok := ctx.Value(middleware.DataScopeKey).(models.DataScope); ok {
+		dataScope = ds
+	}
+
+	teamUserIDs, err := services.GetTeamUserIDs(ctx, h.userRepo, team)
+	if err != nil {
+		return models.DataScope{}, services.ScopeClaims{}, err
+	}
+	return dataScope, services.ScopeClaims{UserID: userID, Team: team, Region: region, TeamUserIDs: teamUserIDs}, nil
+}

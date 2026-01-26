@@ -4,22 +4,20 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
-
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // SequenceTemplate represents a reusable sequence template
 type SequenceTemplate struct {
-	TemplateID  primitive.ObjectID `json:"id" bson:"_id,omitempty" db:"template_id"`
-	Name        string             `json:"name" bson:"name" db:"name" validate:"required,min=1,max=200"`
-	Description string             `json:"description,omitempty" bson:"description,omitempty" db:"description"`
-	ServiceID   primitive.ObjectID `json:"serviceId,omitempty" bson:"service_id,omitempty" db:"service_id"`
-	ScheduleID  primitive.ObjectID `json:"scheduleId,omitempty" bson:"schedule_id,omitempty" db:"schedule_id"`
-	Version     int                `json:"version" bson:"version" db:"version"`
-	IsActive    bool               `json:"isActive" bson:"is_active" db:"is_active"`
-	CreatedBy   primitive.ObjectID `json:"createdBy" bson:"created_by,omitempty" db:"created_by" validate:"required"`
-	CreatedAt   time.Time          `json:"createdAt" bson:"created_at" db:"created_at"`
-	UpdatedAt   time.Time          `json:"updatedAt" bson:"updated_at" db:"updated_at"`
+	TemplateID  string    `json:"id" bson:"_id,omitempty" db:"template_id"`
+	Name        string    `json:"name" bson:"name" db:"name" validate:"required,min=1,max=200"`
+	Description string    `json:"description,omitempty" bson:"description,omitempty" db:"description"`
+	ServiceID   string    `json:"serviceId,omitempty" bson:"service_id,omitempty" db:"service_id"`
+	ScheduleID  string    `json:"scheduleId,omitempty" bson:"schedule_id,omitempty" db:"schedule_id"`
+	Version     int       `json:"version" bson:"version" db:"version"`
+	IsActive    bool      `json:"isActive" bson:"is_active" db:"is_active"`
+	CreatedBy   string    `json:"createdBy" bson:"created_by,omitempty" db:"created_by" validate:"required"`
+	CreatedAt   time.Time `json:"createdAt" bson:"created_at" db:"created_at"`
+	UpdatedAt   time.Time `json:"updatedAt" bson:"updated_at" db:"updated_at"`
 }
 
 // SequenceStepChannel represents a communication channel for a sequence step
@@ -42,20 +40,20 @@ type BranchCondition struct {
 
 // SequenceStepAttachment represents a KOSH document attachment in a sequence step
 type SequenceStepAttachment struct {
-	ID       string `json:"id" bson:"id"`                             // Document ID (from KOSH)
-	Name     string `json:"name" bson:"name"`                         // File name
-	Type     string `json:"type" bson:"type"`                         // Document type (PDF, Presentation, etc.)
-	Size     string `json:"size" bson:"size"`                         // Formatted size (e.g., "232.3 KB")
-	WebURL   string `json:"webUrl,omitempty" bson:"web_url,omitempty"` // Link to document
+	ID       string `json:"id" bson:"id"`                                 // Document ID (from KOSH)
+	Name     string `json:"name" bson:"name"`                             // File name
+	Type     string `json:"type" bson:"type"`                             // Document type (PDF, Presentation, etc.)
+	Size     string `json:"size" bson:"size"`                             // Formatted size (e.g., "232.3 KB")
+	WebURL   string `json:"webUrl,omitempty" bson:"web_url,omitempty"`    // Link to document
 	Category string `json:"category,omitempty" bson:"category,omitempty"` // KOSH category
 }
 
 // CampaignSequenceStep represents a single step in a multi-channel sequence template
 type CampaignSequenceStep struct {
-	TemplateID        primitive.ObjectID       `json:"sequenceTemplateId" bson:"template_id,omitempty" db:"template_id" validate:"required"`
+	TemplateID        string                   `json:"sequenceTemplateId" bson:"template_id,omitempty" db:"template_id" validate:"required"`
 	StepOrder         int                      `json:"order" bson:"step_order" db:"step_order" validate:"required,min=1"`
 	Channel           string                   `json:"communicationType" bson:"channel" db:"channel" validate:"required"`
-	ContentTemplateID primitive.ObjectID       `json:"templateId" bson:"content_template_id,omitempty" db:"content_template_id" validate:"required"`
+	ContentTemplateID string                   `json:"templateId" bson:"content_template_id,omitempty" db:"content_template_id" validate:"required"`
 	Subject           string                   `json:"subject,omitempty" bson:"subject,omitempty" db:"subject"` // For email channel
 	Body              string                   `json:"message" bson:"body" db:"body" validate:"required"`
 	WaitDays          int                      `json:"waitDays" bson:"wait_days" db:"wait_days"`

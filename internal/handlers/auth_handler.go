@@ -16,6 +16,7 @@ import (
 	"github.com/white/user-management/pkg/kafka"
 	"github.com/white/user-management/pkg/mongodb"
 	"github.com/white/user-management/pkg/smtp"
+	"github.com/white/user-management/pkg/uuid"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -135,7 +136,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Check if user has 2FA enabled
 	ctx := context.Background()
 	securitySettings, err := h.settingsRepo.GetSecuritySettings(ctx, user.ID)
-	fmt.Printf("DEBUG 2FA: userID=%s, err=%v, settings=%+v\n", user.ID.Hex(), err, securitySettings)
+	fmt.Printf("DEBUG 2FA: userID=%s, err=%v, settings=%+v\n", user.ID, err, securitySettings)
 	if err == nil && securitySettings != nil && securitySettings.TwoFactorEnabled {
 		//Generate OTP
 		otp := h.otpService.GenerateOTP()
@@ -146,7 +147,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		}
 		// Store OTP in database (reuse password_reset collection with a type field)
 		otpExpiry := h.otpService.GetExpiryTime()
-		tempToken := primitive.NewObjectID()
+		tempToken := uuid.MustNewUUID()
 
 		// Store the 2FA OTP
 		err = h.store2FAOTP(ctx, user.ID, tempToken, otpHash, otpExpiry)
@@ -165,7 +166,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 		respondWithJSON(w, http.StatusOK, LoginResponse{
 			Requires2FA: true,
-			TempToken:   tempToken.Hex(),
+			TempToken:   tempToken,
 			Message:     "2FA verification required. Please check your email for the OTP code.",
 		})
 	}
@@ -464,9 +465,9 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 type TwoFAOTP struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty"`
-	UserID    primitive.ObjectID `bson:"user_id"`
-	TempToken primitive.ObjectID `bson:"temp_token"`
+	ID        string             `bson:"_id,omitempty"`
+	UserID    string             `bson:"user_id"`
+	TempToken string             `bson:"temp_token"`
 	OTPHash   string             `bson:"otp_hash"`
 	ExpiresAt time.Time          `bson:"expires_at"`
 	Used      bool               `bson:"used"`
@@ -474,11 +475,11 @@ type TwoFAOTP struct {
 }
 
 // store2FAOTP stores the 2FA OTP in the database
-func (h *AuthHandler) store2FAOTP(ctx context.Context, userID, tempToken primitive.ObjectID, otpHash string, expiresAt time.Time) error {
+func (h *AuthHandler) store2FAOTP(ctx context.Context, userID, tempToken string, otpHash string, expiresAt time.Time) error {
 	collection := h.db.Database().Collection("two_factor_otps")
-
+	newUUID := uuid.MustNewUUID()
 	otp := TwoFAOTP{
-		ID:        primitive.NewObjectID(),
+		ID:        newUUID,
 		UserID:    userID,
 		TempToken: tempToken,
 		OTPHash:   otpHash,
@@ -508,7 +509,7 @@ func (h *AuthHandler) get2FAOTP(ctx context.Context, tempToken primitive.ObjectI
 }
 
 // mark2FAOTPUsed marks the OTP as used
-func (h *AuthHandler) mark2FAOTPUsed(ctx context.Context, tempToken primitive.ObjectID) error {
+func (h *AuthHandler) mark2FAOTPUsed(ctx context.Context, tempToken string) error {
 	collection := h.db.Database().Collection("two_factor_otps")
 
 	_, err := collection.UpdateOne(ctx,
@@ -871,7 +872,7 @@ func (h *AuthHandler) publishLoginEvent(user *models.User, ipAddress, userAgent 
 
 	event := map[string]interface{}{
 		"event_id":     primitive.NewObjectID().String(),
-		"user_id":      user.ID.Hex(),
+		"user_id":      user.ID,
 		"email":        user.Email,
 		"role":         user.Role,
 		"region":       user.Region,
@@ -901,7 +902,7 @@ func (h *AuthHandler) publishLogoutEvent(user *models.User, ipAddress, userAgent
 
 	event := map[string]interface{}{
 		"event_id":      primitive.NewObjectID().String(),
-		"user_id":       user.ID.Hex(),
+		"user_id":       user.ID,
 		"email":         user.Email,
 		"role":          user.Role,
 		"region":        user.Region,
@@ -968,9 +969,11 @@ func (h *AuthHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	// 	return
 	// }
 
+	newUUID := uuid.MustNewUUID()
+
 	// Create new user (inactive by default, pending activation)
 	newUser := &models.MongoUser{
-		ID:           primitive.NewObjectID(),
+		ID:           newUUID,
 		Email:        req.Email,
 		PasswordHash: req.Password,
 		Name:         req.Name,
