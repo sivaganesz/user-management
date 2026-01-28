@@ -99,7 +99,7 @@ func (r *MongoTemplateRepository) Update(ctx context.Context, template *models.M
 }
 
 // Delete removes a template by ID
-func (r *MongoTemplateRepository) Delete(ctx context.Context, id primitive.ObjectID) error {
+func (r *MongoTemplateRepository) Delete(ctx context.Context, id string) error {
 	filter := bson.M{"_id": id}
 
 	result, err := r.collection.DeleteOne(ctx, filter)
@@ -612,4 +612,15 @@ func (r *MongoTemplateRepository) UpdateTemplateCompat(template *models.MongoTem
 // GetTemplateByIDCompat retrieves a template by ID (no context)
 func (r *MongoTemplateRepository) GetTemplateByIDCompat(tenantID, templateID string) (*models.MongoTemplate, error) {
 	return r.GetByID(context.Background(), templateID)
+}
+
+// DeleteTemplateCompat deletes a template (no context) - stub
+func (r *MongoTemplateRepository) DeleteTemplateCompat(tenantID, templateID string) error {
+	return r.Delete(context.Background(), templateID)
+}
+
+// RemoveTagFromTemplateCompat removes a tag from all templates - stub
+func (r *MongoTemplateRepository) RemoveTagFromTemplateCompat(tenantID string, tag string) error {
+	// Stub - would need to iterate and update templates
+	return nil
 }
