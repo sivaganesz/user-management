@@ -1,4 +1,5 @@
 package repositories
+
 import (
 	"context"
 	"fmt"
@@ -6,6 +7,7 @@ import (
 
 	"github.com/white/user-management/internal/models"
 	"github.com/white/user-management/pkg/mongodb"
+	"github.com/white/user-management/pkg/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -466,7 +468,7 @@ func (r *MongoTemplateRepository) DeleteSequenceTemplate(templateID primitive.Ob
 }
 
 // Clone clones a sequence template
-func (r *MongoTemplateRepository) Clone(templateID primitive.ObjectID, newName string, createdBy primitive.ObjectID) (*models.SequenceTemplateWithSteps, error) {
+func (r *MongoTemplateRepository) Clone(templateID primitive.ObjectID, newName string, createdBy string) (*models.SequenceTemplateWithSteps, error) {
 	// Get the original template
 	original, err := r.GetByIDCompat(templateID)
 	if err != nil {
@@ -474,7 +476,7 @@ func (r *MongoTemplateRepository) Clone(templateID primitive.ObjectID, newName s
 	}
 
 	now := time.Now()
-	newID := primitive.NewObjectID()
+	newID := uuid.MustNewUUID()
 
 	// Create a clone with new ID
 	clone := &models.SequenceTemplateWithSteps{
@@ -546,7 +548,7 @@ func (r *MongoTemplateRepository) ValidateSequence(templateID primitive.ObjectID
 			})
 		}
 
-		if step.ContentTemplateID.IsZero() {
+		if step.ContentTemplateID == uuid.IsEmptyUUID() {
 			errors = append(errors, map[string]interface{}{
 				"stepOrder": stepOrder,
 				"field":     "templateId",
