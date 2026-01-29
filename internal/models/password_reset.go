@@ -2,14 +2,12 @@ package models
 
 import (
 	"time"
-
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // PasswordReset represents a password reset token
 type PasswordReset struct {
 	ResetToken string             `json:"reset_token"`
-	UserID     primitive.ObjectID `json:"user_id"`
+	UserID     string             `json:"user_id"`
 	Email      string             `json:"email"`
 	CreatedAt  time.Time          `json:"created_at"`
 	ExpiresAt  time.Time          `json:"expires_at"`

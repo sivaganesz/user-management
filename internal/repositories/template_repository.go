@@ -336,8 +336,8 @@ func (r *MongoTemplateRepository) CreateSequenceTemplate(template *models.Sequen
 	ctx := context.Background()
 
 	// Generate new ID if not set
-	if template.Template.TemplateID.IsZero() {
-		template.Template.TemplateID = primitive.NewObjectID()
+	if template.Template.TemplateID == "" {
+		template.Template.TemplateID = uuid.MustNewUUID()
 	}
 
 	// Set timestamps
@@ -548,7 +548,7 @@ func (r *MongoTemplateRepository) ValidateSequence(templateID primitive.ObjectID
 			})
 		}
 
-		if step.ContentTemplateID == uuid.IsEmptyUUID() {
+		if step.ContentTemplateID == "" {
 			errors = append(errors, map[string]interface{}{
 				"stepOrder": stepOrder,
 				"field":     "templateId",

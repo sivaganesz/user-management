@@ -10,7 +10,7 @@ import (
 	"github.com/white/user-management/internal/models"
 	"github.com/white/user-management/internal/repositories"
 	"github.com/white/user-management/internal/utils"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"github.com/white/user-management/pkg/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -63,9 +63,10 @@ func (s *AuthService) Login(email, password, ipAddress, userAgent string) (*mode
 		return nil, nil, fmt.Errorf("Failed to generate refresh token: %v", err)
 	}
 
+	tokenID := uuid.MustNewUUID()
 	//create session
 	session := models.Session{
-		TokenID:      primitive.NewObjectID(),
+		TokenID:      tokenID,
 		UserID:       user.ID,
 		RefreshToken: refreshToken,
 		IssuedAt:     time.Now(),
@@ -186,7 +187,7 @@ func VerifyPassword(hashedPassword, password string) error {
 }
 
 // ChangePassword changes a user's password (requires old password verification)
-func (s *AuthService) ChangePassword(userID primitive.ObjectID, oldPassword, newPassword string) error {
+func (s *AuthService) ChangePassword(userID string, oldPassword, newPassword string) error {
 	// Get user
 	user, err := s.userRepo.GetByIDCompat(userID)
 	if err != nil {
@@ -223,12 +224,12 @@ func (s *AuthService) ForgotPassword(email,ipAddress, userAgent string) (string,
 	if err != nil {
 		// Don't reveal if user exists or not (security best practice)
 		// Return a dummy token to prevent user enumeration
-		return primitive.NewObjectID().Hex(), nil
+		return "", nil
 	}
 	// Check if user is active (default to true if not set)
 	if !user.IsActive {
 		// Don't reveal account status
-		return primitive.NewObjectID().Hex(), nil
+		return "", nil
 	}
 
 		// Create reset token
@@ -306,9 +307,10 @@ func (s *AuthService) CreateSessionForUser(user *models.User, ipAddress, userAge
 		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
 	}
 
+	tokenID := uuid.MustNewUUID()
 	// Create session
 	session := models.Session{
-		TokenID:      primitive.NewObjectID(),
+		TokenID:      tokenID,
 		UserID:       user.ID,
 		RefreshToken: refreshToken,
 		IssuedAt:     time.Now(),
