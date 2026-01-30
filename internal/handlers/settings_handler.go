@@ -9,7 +9,6 @@ import (
 	"github.com/white/user-management/internal/models"
 	"github.com/white/user-management/internal/repositories"
 	// "github.com/gorilla/mux"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // SettingsHandler handles settings-related HTTP requests
@@ -30,8 +29,8 @@ func NewSettingsHandler(repo *repositories.SettingsRepository) *SettingsHandler 
 
 
 // Helper to get userID from context
-func (h *SettingsHandler) getUserID(r *http.Request) (primitive.ObjectID, bool) {
-	userID, ok := r.Context().Value(middleware.UserIDKey).(primitive.ObjectID)
+func (h *SettingsHandler) getUserID(r *http.Request) (string, bool) {
+	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
 	return userID, ok
 }
 
