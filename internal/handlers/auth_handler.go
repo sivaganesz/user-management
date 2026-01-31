@@ -317,14 +317,14 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := primitive.ObjectIDFromHex(userIDStr)
-	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Invalid user ID")
-		return
-	}
+	// userID, err := primitive.ObjectIDFromHex(userIDStr)
+	// if err != nil {
+	// 	respondWithError(w, http.StatusBadRequest, "Invalid user ID")
+	// 	return
+	// }
 
 	// Change password
-	if err := h.authService.ChangePassword(userID, req.OldPassword, req.NewPassword); err != nil {
+	if err := h.authService.ChangePassword(userIDStr, req.OldPassword, req.NewPassword); err != nil {
 		respondWithError(w, http.StatusBadRequest, "")
 		return
 	}

@@ -181,29 +181,29 @@ func BuildScopeFilter(resource string, dataScope models.DataScope, claims ScopeC
 	return buildOwnFilter(resource, claims), false
 }
 
-func isCustomerInScope(scopeValue string, claims ScopeClaims) bool {
-	switch scopeValue {
-	case "all":
-		return true
-	case "region":
-		return strings.TrimSpace(company.Region) != "" && company.Region == claims.Region
-	case "team":
-		// Customers don't have a stable team string; rely on account manager / created by.
-		if len(claims.TeamUserIDs) > 0 {
-			if containsString(claims.TeamUserIDs, company.AccountManagerID) {
-				return true
-			}
-			if containsString(claims.TeamUserIDs, company.CreatedBy) {
-				return true
-			}
-		}
-		return company.AccountManagerID == claims.UserID || company.CreatedBy == claims.UserID
-	case "own":
-		fallthrough
-	default:
-		return company.AccountManagerID == claims.UserID || company.CreatedBy == claims.UserID
-	}
-}
+// func isCustomerInScope(scopeValue string, claims ScopeClaims) bool {
+// 	switch scopeValue {
+// 	case "all":
+// 		return true
+// 	case "region":
+// 		return strings.TrimSpace(company.Region) != "" && company.Region == claims.Region
+// 	case "team":
+// 		// Customers don't have a stable team string; rely on account manager / created by.
+// 		if len(claims.TeamUserIDs) > 0 {
+// 			if containsString(claims.TeamUserIDs, company.AccountManagerID) {
+// 				return true
+// 			}
+// 			if containsString(claims.TeamUserIDs, company.CreatedBy) {
+// 				return true
+// 			}
+// 		}
+// 		return company.AccountManagerID == claims.UserID || company.CreatedBy == claims.UserID
+// 	case "own":
+// 		fallthrough
+// 	default:
+// 		return company.AccountManagerID == claims.UserID || company.CreatedBy == claims.UserID
+// 	}
+// }
 
 func containsString(list []string, id string) bool {
 	for _, v := range list {
@@ -216,15 +216,6 @@ func containsString(list []string, id string) bool {
 
 func buildOwnFilter(resource string, claims ScopeClaims) bson.M {
 	switch ScopeFieldForResource(resource) {
-	case "deals":
-		return bson.M{
-			"$or": []bson.M{
-				{"assigned_rep_id": claims.UserID},
-				{"owner": claims.UserID},
-			},
-		}
-	case "leads":
-		return bson.M{"assigned_to": claims.UserID}
 	case "companies":
 		return bson.M{
 			"$or": []bson.M{
@@ -247,10 +238,6 @@ func buildOwnFilter(resource string, claims ScopeClaims) bson.M {
 
 func buildRegionFilter(resource string, region string) bson.M {
 	switch ScopeFieldForResource(resource) {
-	case "deals":
-		return bson.M{"region": region}
-	case "leads":
-		return bson.M{"region": region}
 	case "companies":
 		return bson.M{"region": region}
 	case "campaigns":
@@ -269,26 +256,6 @@ func buildRegionFilter(resource string, region string) bson.M {
 
 func buildTeamFilter(resource string, team string, teamUserIDs []string) bson.M {
 	switch ScopeFieldForResource(resource) {
-	case "deals":
-		or := []bson.M{
-			{"team": team}, // legacy/support if present
-		}
-		if len(teamUserIDs) > 0 {
-			or = append(or,
-				bson.M{"assigned_rep_id": bson.M{"$in": teamUserIDs}},
-				bson.M{"owner": bson.M{"$in": teamUserIDs}},
-				bson.M{"team_members.user_id": bson.M{"$in": teamUserIDs}},
-			)
-		}
-		return bson.M{"$or": or}
-	case "leads":
-		or := []bson.M{
-			{"team": team},
-		}
-		if len(teamUserIDs) > 0 {
-			or = append(or, bson.M{"assigned_to": bson.M{"$in": teamUserIDs}})
-		}
-		return bson.M{"$or": or}
 	case "companies":
 		or := []bson.M{
 			{"team": team}, // legacy/support if present
