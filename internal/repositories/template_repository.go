@@ -605,6 +605,136 @@ func (r *MongoTemplateRepository) CreateTemplateCompat(template *models.MongoTem
 	return r.Create(context.Background(), template)
 }
 
+// GetTemplatesByTag retrieves templates by tag - returns MongoTemplate directly
+func (r *MongoTemplateRepository) GetTemplatesByTag(tag string, limit int) ([]*models.MongoTemplate, error) {
+	return r.SearchByTags(context.Background(), []string{tag}, limit, 0)
+}
+
+// ListMongo lists templates with filters - returns MongoTemplate directly (no conversion)
+func (r *MongoTemplateRepository) ListMongo(filters TemplateFilters) ([]*models.MongoTemplate, error) {
+	ctx := context.Background()
+	limit := filters.Limit
+	if limit == 0 {
+		limit = 50
+	}
+
+	// Build MongoDB filter
+	filter := bson.M{}
+
+	// Channel filter
+	if filters.Channel != "" {
+		filter["channel"] = filters.Channel
+	}
+
+	// Type filter
+	if filters.Type != "" {
+		filter["type"] = filters.Type
+	}
+
+	// Category filter
+	if filters.Category != "" {
+		filter["category"] = filters.Category
+	}
+
+	// Status filter
+	if filters.Status != "" {
+		filter["status"] = filters.Status
+	}
+
+	// ForStage filter (array contains any of the specified stages)
+	if len(filters.ForStage) > 0 {
+		filter["for_stage"] = bson.M{"$in": filters.ForStage}
+	}
+
+	// Industries filter (array contains any of the specified industries)
+	if len(filters.Industries) > 0 {
+		filter["industries"] = bson.M{"$in": filters.Industries}
+	}
+
+	// ApprovalFlag filter
+	if filters.ApprovalFlag != "" {
+		filter["approval_flag"] = filters.ApprovalFlag
+	}
+
+	// ServiceID filter
+	if !uuid.IsEmptyUUID(filters.ServiceID) {
+		filter["service_id"] = filters.ServiceID
+	}
+
+	// TenantID filter
+	if !uuid.IsEmptyUUID(filters.TenantID) {
+		filter["tenant_id"] = filters.TenantID
+	}
+
+	// CreatedBy filter
+	if !uuid.IsEmptyUUID(filters.CreatedBy) {
+		filter["created_by"] = filters.CreatedBy
+	}
+
+	// Search filter (name or body contains search term)
+	if filters.Search != "" {
+		filter["$or"] = []bson.M{
+			{"name": bson.M{"$regex": filters.Search, "$options": "i"}},
+			{"body": bson.M{"$regex": filters.Search, "$options": "i"}},
+			{"subject": bson.M{"$regex": filters.Search, "$options": "i"}},
+		}
+	}
+
+	// Build sort options
+	sortField := "created_at"
+	sortOrder := -1 // Default: newest first
+
+	if filters.SortBy != "" {
+		switch filters.SortBy {
+		case "name":
+			sortField = "name"
+		case "date", "created_at", "createdAt":
+			sortField = "created_at"
+		case "updated_at", "updatedAt":
+			sortField = "updated_at"
+		case "status":
+			sortField = "status"
+		case "performance":
+			sortField = "updated_at"
+		case "usage":
+			sortField = "updated_at"
+		}
+	}
+
+	if filters.SortOrder == "asc" {
+		sortOrder = 1
+	}
+
+	// Calculate skip for pagination
+	skip := filters.Offset
+	if filters.Page > 0 {
+		skip = (filters.Page - 1) * limit
+	}
+
+	opts := options.Find().
+		SetLimit(int64(limit)).
+		SetSkip(int64(skip)).
+		SetSort(bson.D{{Key: sortField, Value: sortOrder}})
+
+	cursor, err := r.collection.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("error listing templates: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var templates []*models.MongoTemplate
+	if err := cursor.All(ctx, &templates); err != nil {
+		return nil, fmt.Errorf("error decoding templates: %w", err)
+	}
+
+	return templates, nil
+}
+
+// ListTemplates lists templates with filters - returns MongoTemplate directly
+func (r *MongoTemplateRepository) ListTemplates(filters TemplateFilters) ([]*models.MongoTemplate, error) {
+	return r.ListMongo(filters)
+}
+
 // UpdateTemplateCompat updates a template (no context)
 func (r *MongoTemplateRepository) UpdateTemplateCompat(template *models.MongoTemplate) error {
 	template.UpdatedAt = time.Now()

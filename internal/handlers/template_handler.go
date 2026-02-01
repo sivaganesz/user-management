@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -246,6 +247,366 @@ func (h *TemplateHandler) CreateTemplate(w http.ResponseWriter, r *http.Request)
 
 	// Return template directly (MongoTemplate has proper JSON tags)
 	respondWithJSON(w, http.StatusCreated, template)
+}
+
+// ListTemplates godoc
+// @Summary List templates with filters
+// @Description Retrieves templates with optional filtering by channel, status, created_by, tag, search term, and pagination support. Tag filtering uses templates_by_tag lookup table for efficient retrieval.
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param channel query string false "Filter by channel (email, sms, whatsapp, linkedin)"
+// @Param status query string false "Filter by status (draft, published)"
+// @Param created_by query string false "Filter by creator user ID (UUID)"
+// @Param tag query string false "Filter by tag (single tag name or comma-separated for multiple tags, uses AND logic)"
+// @Param search query string false "Search in template name and description"
+// @Param page query int false "Page number (default: 1)"
+// @Param limit query int false "Items per page (default: 50, max: 100)"
+// @Param sort_by query string false "Sort by field (name, created_at, updated_at)"
+// @Param sort_order query string false "Sort order (asc, desc)"
+// @Success 200 {object} models.TemplateListResponse
+// @Failure 400 {object} map[string]string "Invalid query parameters"
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /api/v1/templates [get]
+// @Security BearerAuth
+func (h *TemplateHandler) ListTemplates(w http.ResponseWriter, r *http.Request) {
+	// Get tenant ID from context (with fallback to user ID)
+	tenantID, err := h.getTenantID(r)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid tenant ID")
+		return
+	}
+
+	dataScope, claims, err := h.getCampaignScope(r)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	if _, denyAll := services.BuildScopeFilter("campaigns", dataScope, claims); denyAll {
+		respondWithError(w, http.StatusForbidden, "Permission denied")
+		return
+	}
+
+	// Parse tag filter (single or comma-separated)
+	tagFilter := r.URL.Query().Get("tag")
+	var templates []*models.MongoTemplate
+
+	if tagFilter != "" {
+		// Use tag-based lookup for efficient filtering
+		tags := strings.Split(tagFilter, ",")
+
+		if len(tags) == 1 {
+			// Single tag - use templates_by_tag lookup
+			tagName := strings.TrimSpace(tags[0])
+			templates, err = h.templateRepo.GetTemplatesByTag(tagName, 1000)
+			if err != nil {
+				respondWithError(w, http.StatusInternalServerError, "Failed to retrieve templates by tag: "+err.Error())
+				return
+			}
+		} else {
+			// Multiple tags - use AND logic (template must have ALL tags)
+			// Get templates for first tag
+			firstTag := strings.TrimSpace(tags[0])
+			templates, err = h.templateRepo.GetTemplatesByTag(firstTag, 1000)
+			if err != nil {
+				respondWithError(w, http.StatusInternalServerError, "Failed to retrieve templates by tag: "+err.Error())
+				return
+			}
+
+			// Filter to only templates that have ALL tags
+			var filteredTemplates []*models.MongoTemplate
+			for _, template := range templates {
+				hasAllTags := true
+				for _, tag := range tags {
+					tagName := strings.TrimSpace(tag)
+					if !template.HasTag(tagName) {
+						hasAllTags = false
+						break
+					}
+				}
+				if hasAllTags {
+					filteredTemplates = append(filteredTemplates, template)
+				}
+			}
+			templates = filteredTemplates
+		}
+
+		// Apply additional filters (channel, status, search, etc.) to tag-filtered results
+		// Accept both camelCase (frontend) and snake_case parameter names
+		tagSortBy := r.URL.Query().Get("sortBy")
+		if tagSortBy == "" {
+			tagSortBy = r.URL.Query().Get("sort_by")
+		}
+		tagSortOrder := r.URL.Query().Get("sortOrder")
+		if tagSortOrder == "" {
+			tagSortOrder = r.URL.Query().Get("sort_order")
+		}
+
+		filters := repositories.TemplateFilters{
+			TenantID:  tenantID,
+			Channel:   r.URL.Query().Get("channel"),
+			Status:    r.URL.Query().Get("status"),
+			Search:    r.URL.Query().Get("search"),
+			SortBy:    tagSortBy,
+			SortOrder: tagSortOrder,
+		}
+
+		// Apply filters manually
+		var finalTemplates []*models.MongoTemplate
+		for _, template := range templates {
+			// Channel filter
+			if filters.Channel != "" && template.Channel != filters.Channel {
+				continue
+			}
+
+			// Status filter
+			if filters.Status != "" && template.Status != filters.Status {
+				continue
+			}
+
+			// Search filter
+			if filters.Search != "" {
+				searchLower := strings.ToLower(filters.Search)
+				nameLower := strings.ToLower(template.Name)
+				descLower := strings.ToLower(template.Description)
+				if !strings.Contains(nameLower, searchLower) && !strings.Contains(descLower, searchLower) {
+					continue
+				}
+			}
+
+			finalTemplates = append(finalTemplates, template)
+		}
+		templates = finalTemplates
+	} else {
+		// No tag filter - use standard List method
+		// Accept both camelCase (frontend) and snake_case parameter names
+		sortBy := r.URL.Query().Get("sortBy")
+		if sortBy == "" {
+			sortBy = r.URL.Query().Get("sort_by")
+		}
+		sortOrder := r.URL.Query().Get("sortOrder")
+		if sortOrder == "" {
+			sortOrder = r.URL.Query().Get("sort_order")
+		}
+
+		filters := repositories.TemplateFilters{
+			TenantID:     tenantID,
+			Channel:      r.URL.Query().Get("channel"),
+			Status:       r.URL.Query().Get("status"),
+			Search:       r.URL.Query().Get("search"),
+			SortBy:       sortBy,
+			SortOrder:    sortOrder,
+			ApprovalFlag: r.URL.Query().Get("approvalFlag"),
+			Performance:  r.URL.Query().Get("performance"),
+		}
+
+		// Parse serviceId filter (UUID reference)
+		if serviceIDStr := r.URL.Query().Get("serviceId"); serviceIDStr != "" {
+			if err := uuid.ValidateUUID(serviceIDStr); err != nil {
+				respondWithError(w, http.StatusBadRequest, "Invalid serviceId format")
+				return
+			}
+			filters.ServiceID = serviceIDStr
+		}
+
+		// Parse forStage filter - supports both:
+		// 1. Multiple params: forStage=prospect&forStage=mql
+		// 2. Comma-separated: forStage=prospect,mql
+		if forStageValues := r.URL.Query()["forStage"]; len(forStageValues) > 0 {
+			for _, val := range forStageValues {
+				// Split each value by comma in case of comma-separated format
+				parts := strings.Split(val, ",")
+				for _, part := range parts {
+					trimmed := strings.TrimSpace(part)
+					if trimmed != "" {
+						filters.ForStage = append(filters.ForStage, trimmed)
+					}
+				}
+			}
+		}
+
+		// Parse industries filter - supports both formats
+		if industriesValues := r.URL.Query()["industries"]; len(industriesValues) > 0 {
+			for _, val := range industriesValues {
+				parts := strings.Split(val, ",")
+				for _, part := range parts {
+					trimmed := strings.TrimSpace(part)
+					if trimmed != "" {
+						filters.Industries = append(filters.Industries, trimmed)
+					}
+				}
+			}
+		}
+
+		// Parse created_by filter
+		if createdByStr := r.URL.Query().Get("created_by"); createdByStr != "" {
+			if err := uuid.ValidateUUID(createdByStr); err != nil {
+				respondWithError(w, http.StatusBadRequest, "Invalid created_by UUID format")
+				return
+			}
+			filters.CreatedBy = createdByStr
+		}
+
+		// Parse pagination
+		filters.Page = 1
+		if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+			page, err := strconv.Atoi(pageStr)
+			if err != nil || page < 1 {
+				respondWithError(w, http.StatusBadRequest, "Invalid page number")
+				return
+			}
+			filters.Page = page
+		}
+
+		filters.Limit = 50
+		if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+			limit, err := strconv.Atoi(limitStr)
+			if err != nil || limit < 1 {
+				respondWithError(w, http.StatusBadRequest, "Invalid limit value")
+				return
+			}
+			if limit > 100 {
+				limit = 100
+			}
+			filters.Limit = limit
+		}
+
+		// Validate channel if provided
+		if filters.Channel != "" && !models.IsValidChannel(filters.Channel) {
+			respondWithError(w, http.StatusBadRequest, "Invalid channel: must be email, sms, whatsapp, or linkedin")
+			return
+		}
+
+		// Validate status if provided
+		if filters.Status != "" && !models.IsValidTemplateStatus(filters.Status) {
+			respondWithError(w, http.StatusBadRequest, "Invalid status: must be draft or published")
+			return
+		}
+
+		// If scope is not "all", fetch a larger window and apply scope filtering + pagination in-memory.
+		requestedPage := filters.Page
+		requestedLimit := filters.Limit
+		scopeValue := strings.ToLower(strings.TrimSpace(services.ScopeValueForResource(dataScope, "campaigns")))
+		if scopeValue == "all" || scopeValue == "" {
+			// Admin / full scope (or empty = all): do not filter by tenant_id so all org templates are visible
+			filters.TenantID = ""
+		}
+		if scopeValue != "" && scopeValue != "all" {
+			filters.Page = 1
+			filters.Limit = 1000
+		}
+
+		// Call repository (pagination is already applied via filters.Page and filters.Limit)
+		templates, err = h.templateRepo.ListTemplates(filters)
+		if err != nil {
+			respondWithError(w, http.StatusInternalServerError, "Failed to retrieve templates: "+err.Error())
+			return
+		}
+
+		// Enforce RBAC Data Scope (campaigns scope applies to templates)
+		filtered := make([]*models.MongoTemplate, 0, len(templates))
+		for _, t := range templates {
+			if services.IsInScope("campaigns", dataScope, claims, t) {
+				filtered = append(filtered, t)
+			}
+		}
+		templates = filtered
+		totalCount := int64(len(templates))
+
+		// Apply pagination if we fetched a larger window
+		page := requestedPage
+		limit := requestedLimit
+		if scopeValue != "" && scopeValue != "all" {
+			start := (page - 1) * limit
+			if start < 0 {
+				start = 0
+			}
+			end := start + limit
+			if start >= len(templates) {
+				templates = []*models.MongoTemplate{}
+			} else {
+				if end > len(templates) {
+					end = len(templates)
+				}
+				templates = templates[start:end]
+			}
+		}
+
+		// Calculate total pages
+		totalPages := (int(totalCount) + requestedLimit - 1) / requestedLimit
+
+		// Build response
+		response := map[string]interface{}{
+			"templates":  templates,
+			"total":      totalCount,
+			"page":       requestedPage,
+			"limit":      requestedLimit,
+			"totalPages": totalPages,
+		}
+
+		respondWithJSON(w, http.StatusOK, response)
+		return
+	}
+
+	// For tag-filtered results, pagination is applied manually
+	// Get total count from filtered results
+	totalCount := len(templates)
+
+	// Enforce RBAC Data Scope (campaigns scope applies to templates)
+	filtered := make([]*models.MongoTemplate, 0, len(templates))
+	for _, t := range templates {
+		if services.IsInScope("campaigns", dataScope, claims, t) {
+			filtered = append(filtered, t)
+		}
+	}
+	templates = filtered
+	totalCount = len(templates)
+
+	// Parse pagination params
+	page := 1
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		parsedPage, err := strconv.Atoi(pageStr)
+		if err == nil && parsedPage > 0 {
+			page = parsedPage
+		}
+	}
+
+	limit := 50
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err == nil && parsedLimit > 0 {
+			if parsedLimit > 100 {
+				parsedLimit = 100
+			}
+			limit = parsedLimit
+		}
+	}
+
+	// Calculate pagination
+	totalPages := (totalCount + limit - 1) / limit
+	startIdx := (page - 1) * limit
+	endIdx := startIdx + limit
+
+	if startIdx >= totalCount {
+		templates = []*models.MongoTemplate{} // Empty results for out-of-range page
+	} else {
+		if endIdx > totalCount {
+			endIdx = totalCount
+		}
+		templates = templates[startIdx:endIdx]
+	}
+
+	// Build response - MongoTemplate has proper JSON tags
+	response := map[string]interface{}{
+		"templates":  templates,
+		"total":      totalCount,
+		"page":       page,
+		"limit":      limit,
+		"totalPages": totalPages,
+	}
+
+	respondWithJSON(w, http.StatusOK, response)
 }
 
 // UpdateTemplate godoc
@@ -584,8 +945,6 @@ func (h *TemplateHandler) DeleteTemplate(w http.ResponseWriter, r *http.Request)
 
 	w.WriteHeader(http.StatusNoContent)
 }
-
-
 
 func (h *TemplateHandler) getCampaignScope(r *http.Request) (models.DataScope, services.ScopeClaims, error) {
 	ctx := r.Context()

@@ -55,3 +55,26 @@ type SequenceTemplateFilters struct {
 	SortBy    string
 	SortOrder string
 }
+
+// TemplateFilters contains filters for querying templates
+type TemplateFilters struct {
+	Type         string
+	Channel      string
+	Category     string
+	Tags         []string
+	Search       string
+	IsActive     *bool
+	TenantID     string
+	CreatedBy    string
+	Status       string
+	SortBy       string
+	SortOrder    string
+	Limit        int
+	Offset       int
+	Page         int
+	ForStage     []string // Filter by funnel stages (prospect, mql, sql, etc.)
+	Industries   []string // Filter by industries
+	ApprovalFlag string             // Filter by approval flag (green, yellow, red)
+	Performance  string             // Filter by performance level (high, medium, low)
+	ServiceID    string // Filter by service ID (ObjectID reference)
+}
