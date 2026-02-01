@@ -609,6 +609,82 @@ func (h *TemplateHandler) ListTemplates(w http.ResponseWriter, r *http.Request) 
 	respondWithJSON(w, http.StatusOK, response)
 }
 
+// GetTemplate godoc
+// @Summary Get template by ID
+// @Description Retrieves a specific template by its unique identifier with all content fields
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param id path string true "Template ID (UUID)"
+// @Success 200 {object} models.MongoTemplate
+// @Failure 400 {object} map[string]string "Invalid template ID"
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 404 {object} map[string]string "Template not found"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /api/v1/templates/{id} [get]
+// @Security BearerAuth
+func (h *TemplateHandler) GetTemplate(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	templateID := vars["id"]
+	err := uuid.ValidateUUID(templateID)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid template ID format")
+		return
+	}
+
+	// Get tenant ID from context (with fallback to user ID)
+	tenantID, err := h.getTenantID(r)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid tenant ID")
+		return
+	}
+
+	var template *models.MongoTemplate
+
+	// Cache-aside pattern: Try to get from cache first (only if cache is available)
+	if h.cache != nil {
+		cachedTemplate, err := h.cache.Get(tenantID, templateID)
+		if err == nil {
+			// Cache hit
+			template = cachedTemplate
+			goto respondTemplate
+		}
+		// Cache miss - continue to database query
+	}
+
+	// Get template from database
+	template, err = h.templateRepo.GetTemplateByIDCompat(tenantID, templateID)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "Template not found: "+err.Error())
+		return
+	}
+
+respondTemplate:
+	// Enforce RBAC Data Scope (campaigns scope applies to templates)
+	dataScope, claims, err := h.getCampaignScope(r)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	if _, denyAll := services.BuildScopeFilter("campaigns", dataScope, claims); denyAll || !services.IsInScope("campaigns", dataScope, claims, template) {
+		respondWithError(w, http.StatusForbidden, "Permission denied")
+		return
+	}
+
+	// Cache the template if it's published (only cache published templates)
+	// Draft templates change frequently and should not be cached
+	if h.cache != nil && template.Status == "published" {
+		if err := h.cache.Set(template); err != nil {
+			// Log error but don't fail the request
+			// Caching is a performance optimization, not a requirement
+			// We could add logging here: log.Printf("Failed to cache template: %v", err)
+		}
+	}
+
+	// Return frontend-compatible response
+	respondWithJSON(w, http.StatusOK, template)
+}
+
 // UpdateTemplate godoc
 // @Summary Update a template
 // @Description Updates an existing template. Only draft templates should be updated directly. For published templates, consider creating a new version.
@@ -831,7 +907,6 @@ func (h *TemplateHandler) UpdateTemplate(w http.ResponseWriter, r *http.Request)
 	// Return frontend-compatible response
 	respondWithJSON(w, http.StatusOK, template)
 }
-
 
 // DeleteTemplate godoc
 // @Summary Delete a template
