@@ -19,10 +19,10 @@ import (
 	"github.com/white/user-management/internal/handlers"
 	"github.com/white/user-management/internal/middleware"
 
+	"github.com/white/user-management/internal/cache"
 	"github.com/white/user-management/internal/repositories"
 	"github.com/white/user-management/internal/services"
 	"github.com/white/user-management/internal/utils"
-	"github.com/white/user-management/internal/cache"
 	"github.com/white/user-management/pkg/kafka"
 	"github.com/white/user-management/pkg/mongodb"
 	"github.com/white/user-management/pkg/smtp"
@@ -100,7 +100,7 @@ func main() {
 		log.Println("Warning: SMTP_HOST not configured. SMTP email will not be available.")
 	}
 
-		// Initialize Redis client for caching (optional - gracefully handle if not configured)
+	// Initialize Redis client for caching (optional - gracefully handle if not configured)
 	var redisClient *redis.Client
 	var templateCache *cache.TemplateCache
 	redisURL := os.Getenv("REDIS_URL")
@@ -164,7 +164,6 @@ func main() {
 	// Settings handler (User Profile, Security, Email Signature, Company, Notifications, Audit Logs, Approval Rules)
 	settingsHandler := handlers.NewSettingsHandler(settingsRepo)
 	log.Println("Settings Module handler initialized")
-
 
 	// Initialize router
 	router := mux.NewRouter()
@@ -232,28 +231,16 @@ func main() {
 	authMiddleware := func(h http.Handler) http.Handler {
 		return baseAuthMiddleware(middleware.RBACContext(rbacService)(h))
 	}
-	// Initialize JWT middleware
-	// authMiddleware := middleware.JWTAuth(jwtService)
+	// Convenience wrapper: auth + permission check (RBAC)
+	requirePerm := func(permission string, hf http.HandlerFunc) http.Handler {
+		return authMiddleware(middleware.RequirePermission(permission)(http.HandlerFunc(hf)))
+	}
 
 	// Prevent "declared and not used" errors (Task Group 1)
 	_ = api            // Will be used in future task groups for route registration
 	_ = authMiddleware // Will be used in future task groups for protected routes
-
-	// api.HandleFunc("auth/register")
-	// HTTP server configuration
-	srv := &http.Server{
-		Addr:         ":" + getEnvWithDefault("PORT", "8080"),
-		Handler:      corsMiddleware(router),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
-	}
-
-		// Convenience wrapper: auth + permission check (RBAC)
-	requirePerm := func(permission string, hf http.HandlerFunc) http.Handler {
-		return authMiddleware(middleware.RequirePermission(permission)(http.HandlerFunc(hf)))
-	}
 	_ = requirePerm
+
 	// =====================================================
 	// Authentication Routes (MongoDB-based)
 	// =====================================================
@@ -280,8 +267,6 @@ func main() {
 	api.Handle("/auth/verify-invite", http.HandlerFunc(teamHandler.VerifyInviteToken)).Methods("GET", "OPTIONS")
 	api.Handle("/auth/complete-signup", http.HandlerFunc(teamHandler.CompleteSignup)).Methods("POST", "OPTIONS")
 
-
-
 	// ----- Settings Module Routes -----
 	// User Settings (Profile is read-only - managed by O365)
 	api.Handle("/settings/profile", authMiddleware(http.HandlerFunc(settingsHandler.GetProfile))).Methods("GET", "OPTIONS")
@@ -292,6 +277,17 @@ func main() {
 	api.Handle("/system/notifications", authMiddleware(http.HandlerFunc(settingsHandler.GetNotificationSettings))).Methods("GET", "OPTIONS")
 	api.Handle("/system/notifications", authMiddleware(http.HandlerFunc(settingsHandler.UpdateNotificationSettings))).Methods("PUT", "OPTIONS")
 	api.Handle("/system/audit-logs", authMiddleware(http.HandlerFunc(settingsHandler.GetAuditLogs))).Methods("GET", "OPTIONS")
+
+	log.Println("Background workers run in go-worker (separate process)")
+
+	// HTTP server configuration
+	srv := &http.Server{
+		Addr:         ":" + getEnvWithDefault("PORT", "8080"),
+		Handler:      corsMiddleware(router),
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
 
 	// Start server
 	go func() {

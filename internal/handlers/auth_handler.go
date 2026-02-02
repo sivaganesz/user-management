@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/white/user-management/config"
+	"github.com/white/user-management/internal/events"
 	"github.com/white/user-management/internal/models"
 	"github.com/white/user-management/internal/repositories"
 	"github.com/white/user-management/internal/services"
@@ -30,6 +31,8 @@ type AuthHandler struct {
 	db           *mongodb.Client
 	emailRepo    *repositories.MongoEmailRepository
 	userRepo     *repositories.MongoUserRepository
+	auditPublisher *events.AuditPublisher
+
 }
 
 func NewAuthHandler(db *mongodb.Client, config *config.Config, producer *kafka.Producer) *AuthHandler {
@@ -37,6 +40,7 @@ func NewAuthHandler(db *mongodb.Client, config *config.Config, producer *kafka.P
 	userRepo := repositories.NewUserRepository(db)
 	sessionRepo := repositories.NewSessionRepository(db)
 	passwordResetRepo := repositories.NewPasswordResetRepository(db)
+	permissionRepo := repositories.NewPermissionRepository(db)
 	settingsRepo := repositories.NewSettingsRepository(db)
 	emailRepo := repositories.NewMongoEmailRepository(db)
 
@@ -46,7 +50,7 @@ func NewAuthHandler(db *mongodb.Client, config *config.Config, producer *kafka.P
 		panic("Failed to initialize JWT service: " + err.Error())
 	}
 
-	authService := services.NewAuthService(userRepo, sessionRepo, passwordResetRepo, jwtService)
+	authService := services.NewAuthService(userRepo, sessionRepo, passwordResetRepo, permissionRepo, jwtService)
 	otpService := services.NewOTPService()
 	smtpClient, err := smtp.NewSMTPClientFromEnv()
 
@@ -465,13 +469,13 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 type TwoFAOTP struct {
-	ID        string             `bson:"_id,omitempty"`
-	UserID    string             `bson:"user_id"`
-	TempToken string             `bson:"temp_token"`
-	OTPHash   string             `bson:"otp_hash"`
-	ExpiresAt time.Time          `bson:"expires_at"`
-	Used      bool               `bson:"used"`
-	CreatedAt time.Time          `bson:"created_at"`
+	ID        string    `bson:"_id,omitempty"`
+	UserID    string    `bson:"user_id"`
+	TempToken string    `bson:"temp_token"`
+	OTPHash   string    `bson:"otp_hash"`
+	ExpiresAt time.Time `bson:"expires_at"`
+	Used      bool      `bson:"used"`
+	CreatedAt time.Time `bson:"created_at"`
 }
 
 // store2FAOTP stores the 2FA OTP in the database
