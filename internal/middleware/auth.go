@@ -191,6 +191,7 @@ func RequirePermission(permission string) func(http.Handler) http.Handler {
 			// Get permissions from context (set by JWTAuth middleware)
 			permissionsInterface := r.Context().Value(PermissionsKey)
 			if permissionsInterface == nil {
+				log.Printf("Auth: 403 %s %s - permissions not in context (required: %s)", r.Method, r.URL.Path, permission)
 				respondWithJSON(w, http.StatusForbidden, ErrorResponse{
 					Error: ErrorDetail{
 						Code:    "PERMISSION_DENIED",
@@ -202,6 +203,7 @@ func RequirePermission(permission string) func(http.Handler) http.Handler {
 
 			permissions, ok := permissionsInterface.([]string)
 			if !ok {
+				log.Printf("Auth: 403 %s %s - invalid permissions format (required: %s)", r.Method, r.URL.Path, permission)
 				respondWithJSON(w, http.StatusInternalServerError, ErrorResponse{
 					Error: ErrorDetail{
 						Code:    "INTERNAL_ERROR",
@@ -215,6 +217,8 @@ func RequirePermission(permission string) func(http.Handler) http.Handler {
 			hasPermission := models.HasPermission(permissions, permission)
 
 			if !hasPermission {
+				userID, role := r.Context().Value(UserIDKey), r.Context().Value(RoleKey)
+				log.Printf("Auth: 403 %s %s - permission denied (required: %s, user_id: %v, role: %v)", r.Method, r.URL.Path, permission, userID, role)
 				respondWithJSON(w, http.StatusForbidden, ErrorResponse{
 					Error: ErrorDetail{
 						Code:    "PERMISSION_DENIED",
@@ -228,4 +232,91 @@ func RequirePermission(permission string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// RequireRole is a middleware that checks if user has a specific role
+func RequireRole(roles ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Get role from context (set by JWTAuth middleware)
+			userRoleInterface := r.Context().Value(RoleKey)
+			if userRoleInterface == nil {
+				respondWithJSON(w, http.StatusForbidden, ErrorResponse{
+					Error: ErrorDetail{
+						Code:    "ROLE_REQUIRED",
+						Message: "User role not found",
+					},
+				})
+				return
+			}
+
+			role, ok := userRoleInterface.(string)
+			if !ok {
+				respondWithJSON(w, http.StatusInternalServerError, ErrorResponse{
+					Error: ErrorDetail{
+						Code:    "INTERNAL_ERROR",
+						Message: "Invalid role format",
+					},
+				})
+				return
+			}
+
+			// Check if user has one of the required roles
+			hasRole := false
+			for _, r := range roles {
+				if r == role {
+					hasRole = true
+					break
+				}
+			}
+
+			if !hasRole {
+				respondWithJSON(w, http.StatusForbidden, ErrorResponse{
+					Error: ErrorDetail{
+						Code:    "ROLE_DENIED",
+						Message: "Your role does not have access to this resource",
+					},
+				})
+				return
+			}
+
+			// Call next handler
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+
+// GetUserID retrieves user ID from request context as a string UUID
+func GetUserID(r *http.Request) string {
+	if userID, ok := r.Context().Value(UserIDKey).(string); ok {
+		return userID
+	}
+	return ""
+}
+
+// GetUserEmail retrieves user email from request context
+func GetUserEmail(r *http.Request) string {
+	if email, ok := r.Context().Value(EmailKey).(string); ok {
+		return email
+	}
+	return ""
+}
+
+// GetUserRole retrieves user role from request context
+func GetUserRole(r *http.Request) string {
+	if role, ok := r.Context().Value(RoleKey).(string); ok {
+		return role
+	}
+	return ""
+}
+
+// GetUserPermissions retrieves user permissions from request context (set by RBACContext).
+// When checking a required permission, use models.HasPermission(perms, required) so wildcards work;
+// do not compare with == or strings.Contains.
+func GetUserPermissions(r *http.Request) []string {
+	if permissions, ok := r.Context().Value(PermissionsKey).([]string); ok {
+		return permissions
+	}
+	return []string{}
 }
