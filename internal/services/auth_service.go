@@ -18,6 +18,7 @@ type AuthService struct {
 	userRepo          *repositories.MongoUserRepository
 	sessionRepo       *repositories.SessionRepository
 	passwordResetRepo *repositories.PasswordResetRepository
+	permissionRepo    *repositories.PermissionRepository
 	jwtService        *utils.JWTService
 }
 
@@ -25,12 +26,14 @@ func NewAuthService(
 	userRepo *repositories.MongoUserRepository,
 	sessionRepo *repositories.SessionRepository,
 	passwordResetRepo *repositories.PasswordResetRepository,
+	permissionRepo *repositories.PermissionRepository,
 	jwtService *utils.JWTService,
 ) *AuthService {
 	return &AuthService{
 		userRepo:          userRepo,
 		sessionRepo:       sessionRepo,
 		passwordResetRepo: passwordResetRepo,
+		permissionRepo:    permissionRepo,
 		jwtService:        jwtService,
 	}
 }
