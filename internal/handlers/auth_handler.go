@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/white/user-management/config"
 	"github.com/white/user-management/internal/events"
+	"github.com/white/user-management/internal/middleware"
 	"github.com/white/user-management/internal/models"
 	"github.com/white/user-management/internal/repositories"
 	"github.com/white/user-management/internal/services"
@@ -22,17 +24,16 @@ import (
 )
 
 type AuthHandler struct {
-	authService  *services.AuthService
-	producer     *kafka.Producer
-	config       *config.Config
-	settingsRepo *repositories.SettingsRepository
-	otpService   *services.OTPService
-	smtpClient   *smtp.SMTPClient
-	db           *mongodb.Client
-	emailRepo    *repositories.MongoEmailRepository
-	userRepo     *repositories.MongoUserRepository
+	authService    *services.AuthService
+	producer       *kafka.Producer
+	config         *config.Config
+	settingsRepo   *repositories.SettingsRepository
+	otpService     *services.OTPService
+	smtpClient     *smtp.SMTPClient
+	db             *mongodb.Client
+	emailRepo      *repositories.MongoEmailRepository
+	userRepo       *repositories.MongoUserRepository
 	auditPublisher *events.AuditPublisher
-
 }
 
 func NewAuthHandler(db *mongodb.Client, config *config.Config, producer *kafka.Producer) *AuthHandler {
@@ -75,11 +76,12 @@ type LoginRequest struct {
 
 // LoginResponse represents the login response body
 type LoginResponse struct {
-	User        interface{} `json:"user,omitempty"`
-	Tokens      interface{} `json:"tokens,omitempty"`
-	Requires2FA bool        `json:"requires_2fa,omitempty"`
-	TempToken   string      `json:"temp_token,omitempty"`
-	Message     string      `json:"message,omitempty"`
+	User                  interface{} `json:"user,omitempty"`
+	Tokens                interface{} `json:"tokens,omitempty"`
+	Requires2FA           bool        `json:"requires_2fa,omitempty"`
+	RequiresPasswordReset bool        `json:"requiresPasswordReset,omitempty"`
+	TempToken             string      `json:"temp_token,omitempty"`
+	Message               string      `json:"message,omitempty"`
 }
 
 // Helper function to get client IP from request
@@ -133,7 +135,24 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	user, tokens, err := h.authService.Login(req.Email, req.Password, getClientIP(r), r.UserAgent())
 
 	if err != nil {
+		if h.auditPublisher != nil {
+			h.auditPublisher.PublishAuthEvent(r, "", req.Email, req.Email, events.ActionLoginFailed, false, fmt.Sprintf("Login failed for %s: invalid credentials", req.Email))
+		}
 		respondWithError(w, http.StatusUnauthorized, "Invalid email or password")
+		return
+	}
+
+	// Check if user must reset password (master admin first login)
+	if user.MustResetPassword {
+		// Generate temporary token for password reset (15-minute validity encoded in token)
+		tokenData := fmt.Sprintf("reset:%s:%d", user.ID, time.Now().Unix())
+		tempToken := base64.URLEncoding.EncodeToString([]byte(tokenData))
+
+		respondWithJSON(w, http.StatusOK, LoginResponse{
+			RequiresPasswordReset: true,
+			TempToken:             tempToken,
+			Message:               "Password reset required. Please set a new password.",
+		})
 		return
 	}
 
@@ -177,6 +196,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// No 2FA - proceed with normal login
 	// Publish login event to Kafka (async, fire-and-forget)
 	go h.publishLoginEvent(user, getClientIP(r), r.UserAgent())
+
+	// Publish audit event for successful login
+	if h.auditPublisher != nil {
+		h.auditPublisher.PublishAuthEvent(r, user.ID, user.Name, user.Email, events.ActionLogin, true, "User logged in successfully")
+	}
 
 	// Return response
 	respondWithJSON(w, http.StatusOK, LoginResponse{
@@ -222,6 +246,11 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 	// Publish logout event to Kafka (async, fire-and-forget)
 	go h.publishLogoutEvent(user, getClientIP(r), r.UserAgent())
+
+	// Publish audit event for logout
+	if h.auditPublisher != nil {
+		h.auditPublisher.PublishAuthEvent(r, user.ID, user.Name, user.Email, events.ActionLogout, true, "User logged out")
+	}
 
 	// Return response
 	respondWithJSON(w, http.StatusOK, map[string]string{
@@ -315,20 +344,25 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	// For backwards compatibility, we also support X-User-ID header
 	// but the middleware approach is preferred and more secure
 
-	userIDStr := r.Header.Get("X-User-ID")
-	if userIDStr == "" {
+	userID := r.Header.Get("X-User-ID")
+	if userID == "" {
 		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
-	// userID, err := primitive.ObjectIDFromHex(userIDStr)
+	// userID, err := primitive.ObjectIDFromHex(userID)
 	// if err != nil {
 	// 	respondWithError(w, http.StatusBadRequest, "Invalid user ID")
 	// 	return
 	// }
 
 	// Change password
-	if err := h.authService.ChangePassword(userIDStr, req.OldPassword, req.NewPassword); err != nil {
+	if err := h.authService.ChangePassword(userID, req.OldPassword, req.NewPassword); err != nil {
+		// Publish audit event for failed password change
+		if h.auditPublisher != nil {
+			userName, _ := r.Context().Value(middleware.NameKey).(string)
+			h.auditPublisher.PublishAuthEvent(r, userID, userName, "", events.ActionPasswordChanged, false, fmt.Sprintf("Password change failed: %v", err))
+		}
 		respondWithError(w, http.StatusBadRequest, "")
 		return
 	}
@@ -385,6 +419,7 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Failed to create reset token")
 		return
 	}
+
 	user, err := h.userRepo.GetByEmailCompat(req.Email)
 	if err != nil {
 		respondWithError(w, http.StatusNotFound, "This is email not exists")
@@ -458,8 +493,17 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	// }
 	// Reset password
 	if err := h.authService.ResetPassword(req.ResetToken, req.NewPassword); err != nil {
+		// Publish audit event for failed password reset
+		if h.auditPublisher != nil {
+			h.auditPublisher.PublishAuthEvent(r, "", "", "", events.ActionPasswordReset, false, fmt.Sprintf("Password reset failed: %v", err))
+		}
 		respondWithError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+
+	// Publish audit event for successful password reset
+	if h.auditPublisher != nil {
+		h.auditPublisher.PublishAuthEvent(r, "", "", "", events.ActionPasswordReset, true, "Password reset completed successfully")
 	}
 
 	respondWithJSON(w, http.StatusOK, map[string]string{
@@ -497,7 +541,7 @@ func (h *AuthHandler) store2FAOTP(ctx context.Context, userID, tempToken string,
 }
 
 // get2FAOTP retrieves the 2FA OTP record by temp token
-func (h *AuthHandler) get2FAOTP(ctx context.Context, tempToken primitive.ObjectID) (*TwoFAOTP, error) {
+func (h *AuthHandler) get2FAOTP(ctx context.Context, tempToken string) (*TwoFAOTP, error) {
 	collection := h.db.Database().Collection("two_factor_otps")
 	var otp TwoFAOTP
 	err := collection.FindOne(ctx, map[string]interface{}{
@@ -808,9 +852,9 @@ func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tempToken, err := primitive.ObjectIDFromHex(req.TempToken)
-	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "TempToken id is wrong")
+	// Validate temp token format (UUID)
+	if req.TempToken == "" {
+		respondWithError(w, http.StatusBadRequest, "Invalid temp token format")
 		return
 	}
 
@@ -818,7 +862,7 @@ func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 
 	//get the OTP record
-	storedOTP, err := h.get2FAOTP(ctx, tempToken)
+	storedOTP, err := h.get2FAOTP(ctx, req.TempToken)
 	if err != nil {
 		respondWithError(w, http.StatusUnauthorized, "Invalid or expired verification code")
 		return

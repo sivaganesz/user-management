@@ -25,6 +25,9 @@ type MongoUser struct {
 	UpdatedAt      time.Time             `bson:"updated_at" json:"updatedAt"`
 	LastLoginAt  *time.Time         `bson:"last_login_at,omitempty" json:"last_login_at,omitempty"`
 
+	IsMasterAdmin     bool       `bson:"is_master_admin" json:"is_master_admin"`
+	MustResetPassword bool       `bson:"must_reset_password" json:"-"`
+
 }
 type User struct {
 	ID           string `bson:"_id,omitempty" json:"id"`
@@ -39,6 +42,9 @@ type User struct {
 	CreatedAt    time.Time          `bson:"created_at" json:"created_at"`
 	UpdatedAt    time.Time          `bson:"updated_at" json:"updated_at"`
 	LastLoginAt  *time.Time         `bson:"last_login_at,omitempty" json:"last_login_at,omitempty"`
+
+	IsMasterAdmin     bool       `bson:"is_master_admin" json:"is_master_admin"`
+	MustResetPassword bool       `bson:"must_reset_password" json:"-"`
 }
 
 

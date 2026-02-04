@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	UserIDKey      = "user_id"
-	EmailKey       = "email"
-	NameKey        = "name"
-	RoleKey        = "role"
+	UserIDKey = "user_id"
+	EmailKey  = "email"
+	NameKey   = "name"
+	RoleKey   = "role"
+	RegionKey = "region"
 	TeamKey        = "team"
 	PermissionsKey = "permissions"
 	DataScopeKey   = "data_scope"
