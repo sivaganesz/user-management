@@ -154,7 +154,7 @@ func (h *TemplateHandler) CreateTemplate(w http.ResponseWriter, r *http.Request)
 	var serviceID string
 	if req.ServiceID != "" {
 		// Validate UUID format if needed
-		if err := uuid.ValidateUUID(req.ServiceID); err != nil {
+		if _, err := uuid.ValidateUUID(req.ServiceID); err != nil {
 			respondWithError(w, http.StatusBadRequest, "Invalid service ID format")
 			return
 		}
@@ -403,7 +403,7 @@ func (h *TemplateHandler) ListTemplates(w http.ResponseWriter, r *http.Request) 
 
 		// Parse serviceId filter (UUID reference)
 		if serviceIDStr := r.URL.Query().Get("serviceId"); serviceIDStr != "" {
-			if err := uuid.ValidateUUID(serviceIDStr); err != nil {
+			if _, err := uuid.ValidateUUID(serviceIDStr); err != nil {
 				respondWithError(w, http.StatusBadRequest, "Invalid serviceId format")
 				return
 			}
@@ -441,7 +441,7 @@ func (h *TemplateHandler) ListTemplates(w http.ResponseWriter, r *http.Request) 
 
 		// Parse created_by filter
 		if createdByStr := r.URL.Query().Get("created_by"); createdByStr != "" {
-			if err := uuid.ValidateUUID(createdByStr); err != nil {
+			if _, err := uuid.ValidateUUID(createdByStr); err != nil {
 				respondWithError(w, http.StatusBadRequest, "Invalid created_by UUID format")
 				return
 			}
@@ -626,8 +626,7 @@ func (h *TemplateHandler) ListTemplates(w http.ResponseWriter, r *http.Request) 
 func (h *TemplateHandler) GetTemplate(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	templateID := vars["id"]
-	err := uuid.ValidateUUID(templateID)
-	if err != nil {
+	if _, err := uuid.ValidateUUID(templateID); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid template ID format")
 		return
 	}
@@ -704,8 +703,7 @@ func (h *TemplateHandler) UpdateTemplate(w http.ResponseWriter, r *http.Request)
 	vars := mux.Vars(r)
 	ctx := context.Background()
 	templateID := vars["id"]
-	err := uuid.ValidateUUID(templateID)
-	if err != nil {
+	if _, err := uuid.ValidateUUID(templateID); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid template ID format")
 		return
 	}
@@ -840,7 +838,7 @@ func (h *TemplateHandler) UpdateTemplate(w http.ResponseWriter, r *http.Request)
 
 	// Apply service ID (validate UUID)
 	if req.ServiceID != "" {
-		if err := uuid.ValidateUUID(req.ServiceID); err != nil {
+		if _, err := uuid.ValidateUUID(req.ServiceID); err != nil {
 			respondWithError(w, http.StatusBadRequest, "Invalid service ID format")
 			return
 		}
@@ -926,8 +924,7 @@ func (h *TemplateHandler) DeleteTemplate(w http.ResponseWriter, r *http.Request)
 	ctx := context.Background()
 	vars := mux.Vars(r)
 	templateID := vars["id"]
-	err := uuid.ValidateUUID(templateID)
-	if err != nil {
+	if _, err := uuid.ValidateUUID(templateID); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid template ID format")
 		return
 	}

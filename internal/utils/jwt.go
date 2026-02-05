@@ -136,7 +136,7 @@ func (s *JWTService) ValidateRefreshToken(tokenString string) (string, error) {
 
 	if claims, ok := token.Claims.(*jwt.RegisteredClaims); ok && token.Valid {
 		userId := claims.Subject
-		if err := uuid.ValidateUUID(userId); err != nil {
+		if _, err := uuid.ValidateUUID(userId); err != nil {
 			return "", fmt.Errorf("invalid user ID in token: %w", err)
 		}
 		return userId, nil
@@ -152,7 +152,7 @@ func (s *JWTService) ValidateTokenAndGetUserID(tokenString string) (string, erro
 	}
 
 	userId := claims.Subject
-	if err := uuid.ValidateUUID(userId); err != nil {
+	if _, err := uuid.ValidateUUID(userId); err != nil {
 		return "", fmt.Errorf("invalid user ID in token: %w", err)
 	}
 

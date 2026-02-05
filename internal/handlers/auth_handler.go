@@ -67,6 +67,10 @@ func NewAuthHandler(db *mongodb.Client, config *config.Config, producer *kafka.P
 		userRepo:     userRepo,
 	}
 }
+// SetAuditPublisher sets the audit publisher for logging auth events
+func (h *AuthHandler) SetAuditPublisher(publisher *events.AuditPublisher) {
+	h.auditPublisher = publisher
+}
 
 // LoginRequest represents the login request body
 type LoginRequest struct {
@@ -632,7 +636,7 @@ This is an automated email. Please do not reply.
 	`, name, otp)
 
 	// Create email message with unique ID
-	messageID := primitive.NewObjectID()
+	messageID := uuid.MustNewUUID()
 	now := time.Now()
 
 	msg := &models.CommMessage{
@@ -788,7 +792,7 @@ If you did not request this, you can ignore this email.
 	)
 
 	// Create email message with unique ID
-	messageID := primitive.NewObjectID()
+	messageID := uuid.MustNewUUID()
 	now := time.Now()
 
 	msg := &models.CommMessage{

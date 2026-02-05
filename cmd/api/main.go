@@ -16,6 +16,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	httpSwagger "github.com/swaggo/http-swagger"
 	"github.com/white/user-management/config"
+	"github.com/white/user-management/internal/events"
 	"github.com/white/user-management/internal/handlers"
 	"github.com/white/user-management/internal/middleware"
 
@@ -128,7 +129,9 @@ func main() {
 
 	// Prevent "declared and not used" errors for optional external clients
 	_ = templateCache
-
+	// Audit Publisher (fire-and-forget Kafka events for audit log)
+	auditPublisher := events.NewAuditPublisher(kafkaProducer)
+	log.Println("Audit publisher initialized (audit events via Kafka)")
 
 	// =====================================================
 	// MONGODB REPOSITORIES
@@ -245,7 +248,7 @@ func main() {
 	// Authentication Routes (MongoDB-based)
 	// =====================================================
 	authHandler := handlers.NewAuthHandler(mongoClient, cfg, kafkaProducer)
-	// authHandler.SetAuditPublisher(auditPublisher)
+	authHandler.SetAuditPublisher(auditPublisher)
 	api.HandleFunc("/auth/login", authHandler.Login).Methods("POST", "OPTIONS")
 	api.HandleFunc("/auth/verify-2fa", authHandler.Verify2FA).Methods("POST", "OPTIONS")
 	api.HandleFunc("/auth/logout", authHandler.Logout).Methods("POST", "OPTIONS")
@@ -256,7 +259,7 @@ func main() {
 
 	// api.HandleFunc("/create/new-user", authHandler.CreateUser).Methods("POST", "OPTIONS")
 
-	teamHandler := handlers.NewTeamHandler(mongoClient, smtpClient, kafkaProducer)
+	teamHandler := handlers.NewTeamHandler(mongoClient, smtpClient, kafkaProducer,auditPublisher)
 	api.Handle("/team/members", authMiddleware(http.HandlerFunc(teamHandler.ListTeamMembers))).Methods("GET", "OPTIONS")
 	api.Handle("/team/members/{id}", authMiddleware(http.HandlerFunc(teamHandler.GetTeamMember))).Methods("GET", "OPTIONS")
 	api.Handle("/team/members/invite", authMiddleware(http.HandlerFunc(teamHandler.InviteTeamMember))).Methods("POST", "OPTIONS")

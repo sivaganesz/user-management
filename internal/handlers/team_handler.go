@@ -12,11 +12,14 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/white/user-management/internal/events"
+	"github.com/white/user-management/internal/middleware"
 	"github.com/white/user-management/internal/models"
 	"github.com/white/user-management/internal/repositories"
 	"github.com/white/user-management/pkg/kafka"
 	"github.com/white/user-management/pkg/mongodb"
 	"github.com/white/user-management/pkg/smtp"
+	"github.com/white/user-management/pkg/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -25,41 +28,45 @@ import (
 
 // TeamHandler handles team member management endpoints
 type TeamHandler struct {
-	client        *mongodb.Client
-	smtpClient    *smtp.SMTPClient
-	kafkaProducer *kafka.Producer
-	emailRepo     *repositories.MongoEmailRepository
+	client         *mongodb.Client
+	smtpClient     *smtp.SMTPClient
+	kafkaProducer  *kafka.Producer
+	emailRepo      *repositories.MongoEmailRepository
+	permissionRepo *repositories.PermissionRepository
+	auditPublisher *events.AuditPublisher
 }
 
 // NewTeamHandler creates a new TeamHandler
-func NewTeamHandler(client *mongodb.Client, smtpClient *smtp.SMTPClient, kafkaProducer *kafka.Producer) *TeamHandler {
+func NewTeamHandler(client *mongodb.Client, smtpClient *smtp.SMTPClient, kafkaProducer *kafka.Producer, auditPublisher *events.AuditPublisher) *TeamHandler {
 	return &TeamHandler{
-		client:        client,
-		smtpClient:    smtpClient,
-		kafkaProducer: kafkaProducer,
-		emailRepo:     repositories.NewMongoEmailRepository(client),
+		client:         client,
+		smtpClient:     smtpClient,
+		kafkaProducer:  kafkaProducer,
+		emailRepo:      repositories.NewMongoEmailRepository(client),
+		permissionRepo: repositories.NewPermissionRepository(client),
+		auditPublisher: auditPublisher,
 	}
 }
 
 // TeamMember represents a team member response
 type TeamMember struct {
-	ID          primitive.ObjectID `json:"id"`
-	FirstName   string             `json:"firstName"`
-	LastName    string             `json:"lastName"`
-	Name        string             `json:"name"`
-	Email       string             `json:"email"`
-	Role        string             `json:"role"`
-	Region      string             `json:"region"`
-	Team        string             `json:"team"`
-	Status      string             `json:"status"`
-	Permissions []string           `json:"permissions"`
-	Avatar      string             `json:"avatar,omitempty"`
-	Phone       string             `json:"phone,omitempty"`
-	JobTitle    string             `json:"jobTitle,omitempty"`
-	InviteToken string             `json:"inviteToken,omitempty"`
-	CreatedAt   time.Time          `json:"createdAt"`
-	UpdatedAt   time.Time          `json:"updatedAt"`
-	LastLogin   *time.Time         `json:"lastLogin,omitempty"`
+	ID          string     `json:"id"`
+	FirstName   string     `json:"firstName"`
+	LastName    string     `json:"lastName"`
+	Name        string     `json:"name"`
+	Email       string     `json:"email"`
+	Role        string     `json:"role"`
+	Region      string     `json:"region"`
+	Team        string     `json:"team"`
+	Status      string     `json:"status"`
+	Permissions []string   `json:"permissions"`
+	Avatar      string     `json:"avatar,omitempty"`
+	Phone       string     `json:"phone,omitempty"`
+	JobTitle    string     `json:"jobTitle,omitempty"`
+	InviteToken string     `json:"inviteToken,omitempty"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
+	LastLogin   *time.Time `json:"lastLogin,omitempty"`
 }
 
 // TeamMembersResponse represents the response for list team members
@@ -136,7 +143,7 @@ func (h *TeamHandler) ListTeamMembers(w http.ResponseWriter, r *http.Request) {
 		}
 
 		member := TeamMember{
-			ID:          getObjectIDField(user, "_id"),
+			ID:          getIDField(user, "_id"),
 			FirstName:   firstName,
 			LastName:    lastName,
 			Name:        name,
@@ -189,7 +196,7 @@ func (h *TeamHandler) GetTeamMember(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	idStr := vars["id"]
 
-	id, err := primitive.ObjectIDFromHex(idStr)
+	id, err := uuid.ValidateUUID(idStr)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid team member ID")
 		return
@@ -211,7 +218,7 @@ func (h *TeamHandler) GetTeamMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	member := TeamMember{
-		ID:          getObjectIDField(user, "_id"),
+		ID:          getIDField(user, "_id"),
 		FirstName:   firstName,
 		LastName:    lastName,
 		Name:        name,
@@ -310,7 +317,7 @@ func (h *TeamHandler) InviteTeamMember(w http.ResponseWriter, r *http.Request) {
 	inviteTokenHash := hashToken(inviteToken)
 	// Create new user with invited status
 	now := time.Now()
-	userID := primitive.NewObjectID()
+	userID := uuid.MustNewUUID()
 	fullName := firstName + " " + lastName
 	newUser := bson.M{
 		"_id":               userID,
@@ -348,6 +355,13 @@ func (h *TeamHandler) InviteTeamMember(w http.ResponseWriter, r *http.Request) {
 		emailSent = true
 	}
 
+	// Publish audit event via Kafka (fire-and-forget)
+	if h.auditPublisher != nil {
+		actorID := middleware.GetUserID(r)
+		actorName, _ := ctx.Value(middleware.NameKey).(string)
+		h.auditPublisher.PublishTeamEvent(r, actorID, actorName, events.ActionTeamMemberAdded,
+			userID, fmt.Sprintf("Team member invited: %s (%s) - role: %s", fullName, req.Email, req.Role))
+	}
 	respondWithJSON(w, http.StatusCreated, map[string]interface{}{
 		"success":   true,
 		"message":   "Team member invited successfully",
@@ -408,7 +422,7 @@ White Platform Team
 `, firstName, inviteURL)
 
 	// Create email message with unique ID
-	messageID := primitive.NewObjectID()
+	messageID := uuid.MustNewUUID()
 	now := time.Now()
 
 	msg := &models.CommMessage{
@@ -551,16 +565,17 @@ func getStringArrayField(m bson.M, key string) []string {
 	return []string{}
 }
 
-func getObjectIDField(m bson.M, key string) primitive.ObjectID {
-	if val, ok := m[key].(primitive.ObjectID); ok {
+func getIDField(m bson.M, key string) string {
+	if val, ok := m[key].(string); ok && val != "" {
 		return val
 	}
+	// Handle legacy ObjectID format for backward compatibility
 	if val, ok := m[key].(string); ok {
-		if oid, err := primitive.ObjectIDFromHex(val); err == nil {
-			return oid
+		if val != "" {
+			return val
 		}
 	}
-	return primitive.NilObjectID
+	return ""
 }
 
 func getValueOrDefault(val, defaultVal string) string {
@@ -576,7 +591,7 @@ func (h *TeamHandler) UpdateTeamMember(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	idStr := vars["id"]
 
-	id, err := primitive.ObjectIDFromHex(idStr)
+	id, err := uuid.ValidateUUID(idStr)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid team member ID")
 		return
@@ -634,7 +649,19 @@ func (h *TeamHandler) UpdateTeamMember(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Failed to update team member")
 		return
 	}
-
+	// Publish audit log event (fire-and-forget)
+	if h.auditPublisher != nil {
+		actorID := middleware.GetUserID(r)
+		actorName, _ := ctx.Value(middleware.NameKey).(string)
+		h.auditPublisher.PublishTeamEvent(
+			r,
+			actorID,
+			actorName,
+			events.ActionTeamMemberUpdated,
+			idStr,
+			fmt.Sprintf("Team member updated (ID: %s)", idStr),
+		)
+	}
 	respondWithJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"message": "Team member updated successfully",
@@ -647,7 +674,7 @@ func (h *TeamHandler) DeactivateTeamMember(w http.ResponseWriter, r *http.Reques
 	vars := mux.Vars(r)
 	idStr := vars["id"]
 
-	id, err := primitive.ObjectIDFromHex(idStr)
+	id, err := uuid.ValidateUUID(idStr)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid team member ID")
 		return
@@ -665,6 +692,20 @@ func (h *TeamHandler) DeactivateTeamMember(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Publish audit log event (fire-and-forget)
+	if h.auditPublisher != nil {
+		actorID := middleware.GetUserID(r)
+		actorName, _ := ctx.Value(middleware.NameKey).(string)
+		h.auditPublisher.PublishTeamEvent(
+			r,
+			actorID,
+			actorName,
+			events.ActionTeamMemberDeactivated,
+			idStr,
+			fmt.Sprintf("Team member deactivated (ID: %s)", idStr),
+		)
+	}
+
 	respondWithJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"message": "Team member deactivated successfully",
@@ -677,7 +718,7 @@ func (h *TeamHandler) ReactivateTeamMember(w http.ResponseWriter, r *http.Reques
 	vars := mux.Vars(r)
 	idStr := vars["id"]
 
-	id, err := primitive.ObjectIDFromHex(idStr)
+	id, err := uuid.ValidateUUID(idStr)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid team member ID")
 		return
@@ -696,6 +737,20 @@ func (h *TeamHandler) ReactivateTeamMember(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Publish audit log event (fire-and-forget)
+	if h.auditPublisher != nil {
+		actorID := middleware.GetUserID(r)
+		actorName, _ := ctx.Value(middleware.NameKey).(string)
+		h.auditPublisher.PublishTeamEvent(
+			r,
+			actorID,
+			actorName,
+			events.ActionTeamMemberActivated,
+			idStr,
+			fmt.Sprintf("Team member reactivated (ID: %s)", idStr),
+		)
+	}
+
 	respondWithJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"message": "Team member reactivated successfully",
@@ -708,7 +763,7 @@ func (h *TeamHandler) DeleteTeamMember(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	idStr := vars["id"]
 
-	id, err := primitive.ObjectIDFromHex(idStr)
+	id, err := uuid.ValidateUUID(idStr)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid team member ID")
 		return
@@ -727,6 +782,20 @@ func (h *TeamHandler) DeleteTeamMember(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to delete team member")
 		return
+	}
+
+	// Publish audit log event (fire-and-forget)
+	if h.auditPublisher != nil {
+		actorID := middleware.GetUserID(r)
+		actorName, _ := ctx.Value(middleware.NameKey).(string)
+		h.auditPublisher.PublishTeamEvent(
+			r,
+			actorID,
+			actorName,
+			events.ActionTeamMemberRemoved,
+			idStr,
+			fmt.Sprintf("Team member deleted (ID: %s)", idStr),
+		)
 	}
 
 	respondWithJSON(w, http.StatusOK, map[string]interface{}{

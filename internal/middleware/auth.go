@@ -158,7 +158,7 @@ func JWTAuthDualAlg(jwtService *utils.JWTService, jwksCache *utils.JWKSCache, sh
 			}
 
 			// Validate userID UUID format
-			if err := uuid.ValidateUUID(claims.UserID); err != nil {
+			if _, err := uuid.ValidateUUID(claims.UserID); err != nil {
 				log.Printf("Invalid user ID format in token: %v", err)
 				respondWithJSON(w, http.StatusUnauthorized, ErrorResponse{
 					Error: ErrorDetail{
