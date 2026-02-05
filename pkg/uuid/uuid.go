@@ -25,15 +25,15 @@ func MustNewUUID() string {
 }
 
 // ValidateUUID checks if a string is a valid UUID format
-func ValidateUUID(id string) error {
+func ValidateUUID(id string) (string, error) {
 	if id == "" {
-		return fmt.Errorf("UUID cannot be empty")
+		return "", fmt.Errorf("UUID cannot be empty")
 	}
 	_, err := uuid.FromString(id)
 	if err != nil {
-		return fmt.Errorf("invalid UUID format: %w", err)
+		return "", fmt.Errorf("invalid UUID format: %w", err)
 	}
-	return nil
+	return id, nil
 }
 
 // IsEmptyUUID checks if a UUID string is empty
@@ -50,7 +50,7 @@ func UUIDsToStrings(ids []string) []string {
 func StringsToUUIDs(strs []string) []string {
 	result := make([]string, 0, len(strs))
 	for _, str := range strs {
-		if err := ValidateUUID(str); err == nil {
+		if _, err := ValidateUUID(str); err == nil {
 			result = append(result, str)
 		}
 	}

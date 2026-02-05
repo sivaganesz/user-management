@@ -250,8 +250,8 @@ func (c *SMTPClient) buildEmailContent(msg *models.CommMessage) []byte {
 	builder.WriteString(fmt.Sprintf("Subject: %s\r\n", msg.Subject))
 
 	// Message-ID header
-	if msg.MessageID.Hex() != "" && msg.MessageID.Hex() != "000000000000000000000000" {
-		builder.WriteString(fmt.Sprintf("Message-ID: <%s@csa.skillzen.ai>\r\n", msg.MessageID.Hex()))
+	if msg.MessageID != "" && msg.MessageID != "000000000000000000000000" {
+		builder.WriteString(fmt.Sprintf("Message-ID: <%s@csa.skillzen.ai>\r\n", msg.MessageID))
 	}
 
 	// In-Reply-To and References headers for threading

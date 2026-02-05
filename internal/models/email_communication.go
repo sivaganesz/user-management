@@ -2,15 +2,13 @@ package models
 
 import (
 	"time"
-
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // MongoCommunication represents a communication record in MongoDB
 // Collection: communications
 type MongoCommunication struct {
-	ID          primitive.ObjectID        `bson:"_id,omitempty" json:"id"`
-	ThreadID    primitive.ObjectID        `bson:"thread_id,omitempty" json:"threadId,omitempty"` // Thread/conversation ID for grouping
+	ID          string        `bson:"_id,omitempty" json:"id"`
+	ThreadID    string        `bson:"thread_id,omitempty" json:"threadId,omitempty"` // Thread/conversation ID for grouping
 	Channel     string                    `bson:"channel" json:"channel"`                        // email, sms, whatsapp, linkedin
 	Direction   string                    `bson:"direction" json:"direction"`                    // inbound, outbound
 	From        string                    `bson:"from" json:"from"`                              // Sender name for display
@@ -26,10 +24,10 @@ type MongoCommunication struct {
 	Snippet     string                    `bson:"snippet,omitempty" json:"snippet,omitempty"`    // Short preview of message
 	Attachments []CommunicationAttachment `bson:"attachments,omitempty" json:"attachments,omitempty"` // File attachments
 	Priority    string                    `bson:"priority,omitempty" json:"priority,omitempty"`  // normal, high, urgent
-	CustomerID  primitive.ObjectID        `bson:"customer_id,omitempty" json:"customerId,omitempty"`
-	DealID      primitive.ObjectID        `bson:"deal_id,omitempty" json:"dealId,omitempty"`
-	CampaignID  primitive.ObjectID        `bson:"campaign_id,omitempty" json:"campaignId,omitempty"`
-	UserID      primitive.ObjectID        `bson:"user_id,omitempty" json:"userId,omitempty"`     // Sender/owner user ID
+	CustomerID  string        `bson:"customer_id,omitempty" json:"customerId,omitempty"`
+	DealID      string        `bson:"deal_id,omitempty" json:"dealId,omitempty"`
+	CampaignID  string        `bson:"campaign_id,omitempty" json:"campaignId,omitempty"`
+	UserID      string        `bson:"user_id,omitempty" json:"userId,omitempty"`     // Sender/owner user ID
 	Status      string                    `bson:"status" json:"status"`                          // pending, queued, sending, sent, delivered, opened, clicked, bounced, failed, spam, unsubscribed
 
 	// External provider tracking

@@ -8,7 +8,6 @@ import (
 	"github.com/white/user-management/internal/models"
 	"github.com/white/user-management/pkg/mongodb"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -39,7 +38,7 @@ type EmailFilters struct {
 	DateFrom   *time.Time
 	DateTo     *time.Time
 	EntityType string
-	EntityID   primitive.ObjectID
+	EntityID   string
 	Limit      int
 }
 
@@ -50,7 +49,7 @@ func (r *MongoEmailRepository) CreateMessage(ctx context.Context, message *model
 	if err != nil {
 		return fmt.Errorf("error creating email message: %w", err)
 	}
-	message.ID = result.InsertedID.(primitive.ObjectID)
+	message.ID = result.InsertedID.(string)
 	return nil
 }
 
@@ -67,8 +66,7 @@ func (r *MongoEmailRepository) CreateMessageFromCommMessage(msg *models.CommMess
 		To:         "", // Will be set from first ToAddress
 		Subject:    msg.Subject,
 		Body:       msg.BodyText,
-		CustomerID: primitive.NilObjectID, // Set from EntityID if EntityType is customer
-		DealID:     primitive.NilObjectID, // Set from EntityID if EntityType is deal
+		CustomerID: "", // Set from EntityID if EntityType is customer
 		Status:     msg.Status,
 		SentAt:     msg.CreatedAt,
 		ReadAt:     nil,
@@ -89,7 +87,7 @@ func (r *MongoEmailRepository) CreateMessageFromCommMessage(msg *models.CommMess
 }
 
 // GetMessageByID retrieves an email message by ID
-func (r *MongoEmailRepository) GetMessageByID(ctx context.Context, id primitive.ObjectID) (*models.MongoCommunication, error) {
+func (r *MongoEmailRepository) GetMessageByID(ctx context.Context, id string) (*models.MongoCommunication, error) {
 	var msg models.MongoCommunication
 
 	filter := bson.M{
@@ -109,7 +107,7 @@ func (r *MongoEmailRepository) GetMessageByID(ctx context.Context, id primitive.
 }
 
 // GetMessagesByThread retrieves all email messages in a thread
-func (r *MongoEmailRepository) GetMessagesByThread(ctx context.Context, threadID primitive.ObjectID) ([]*models.MongoCommunication, error) {
+func (r *MongoEmailRepository) GetMessagesByThread(ctx context.Context, threadID string) ([]*models.MongoCommunication, error) {
 	filter := bson.M{
 		"thread_id": threadID,
 		"channel":   string(models.CommunicationChannelEmail),
@@ -132,7 +130,7 @@ func (r *MongoEmailRepository) GetMessagesByThread(ctx context.Context, threadID
 }
 
 // GetInbox retrieves inbox messages for a user with filters
-func (r *MongoEmailRepository) GetInbox(ctx context.Context, userID primitive.ObjectID, filters EmailFilters) ([]*models.MongoCommunication, error) {
+func (r *MongoEmailRepository) GetInbox(ctx context.Context, userID string, filters EmailFilters) ([]*models.MongoCommunication, error) {
 	if filters.Limit <= 0 {
 		filters.Limit = 50 // Default limit
 	}
@@ -165,7 +163,7 @@ func (r *MongoEmailRepository) GetInbox(ctx context.Context, userID primitive.Ob
 			filter["sentAt"] = bson.M{"$lte": filters.DateTo}
 		}
 	}
-	if !filters.EntityID.IsZero() {
+	if filters.EntityID != "" {
 		if filters.EntityType == "customer" {
 			filter["customerId"] = filters.EntityID
 		} 
@@ -191,7 +189,7 @@ func (r *MongoEmailRepository) GetInbox(ctx context.Context, userID primitive.Ob
 }
 
 // UpdateMessageStatus updates email message status
-func (r *MongoEmailRepository) UpdateMessageStatus(ctx context.Context, id primitive.ObjectID, status string) error {
+func (r *MongoEmailRepository) UpdateMessageStatus(ctx context.Context, id string, status string) error {
 	filter := bson.M{
 		"_id":     id,
 		"channel": string(models.CommunicationChannelEmail),
@@ -215,7 +213,7 @@ func (r *MongoEmailRepository) UpdateMessageStatus(ctx context.Context, id primi
 }
 
 //MarkAsRead marks an email message as read
-func (r *MongoEmailRepository) MarkAsRead(ctx context.Context, id primitive.ObjectID) error {
+func (r *MongoEmailRepository) MarkAsRead(ctx context.Context, id string) error {
 	filter := bson.M{
 		"_id": id,
 		"channel": string(models.CommunicationChannelEmail),
@@ -238,13 +236,13 @@ func (r *MongoEmailRepository) MarkAsRead(ctx context.Context, id primitive.Obje
 
 // MessageThread represents an email conversation thread
 type MessageThread struct {
-	ID                   primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	ID                   string   `bson:"_id,omitempty" json:"id"`
 	Subject              string               `bson:"subject" json:"subject"`
 	Channel              string               `bson:"channel" json:"channel"`
 	EntityType           string               `bson:"entityType,omitempty" json:"entityType,omitempty"`
-	EntityID             primitive.ObjectID   `bson:"entityId,omitempty" json:"entityId,omitempty"`
+	EntityID             string   `bson:"entityId,omitempty" json:"entityId,omitempty"`
 	ParticipantAddresses []string             `bson:"participantAddresses" json:"participantAddresses"`
-	ParticipantIDs       []primitive.ObjectID `bson:"participantIds,omitempty" json:"participantIds,omitempty"`
+	ParticipantIDs       []string `bson:"participantIds,omitempty" json:"participantIds,omitempty"`
 	MessageCount         int                  `bson:"messageCount" json:"messageCount"`
 	UnreadCount          int                  `bson:"unreadCount" json:"unreadCount"`
 	LastMessageAt        time.Time            `bson:"lastMessageAt" json:"lastMessageAt"`
@@ -263,12 +261,12 @@ func (r *MongoEmailRepository) CreateThread(ctx context.Context, thread *Message
 	if err != nil {
 		return fmt.Errorf("error creating email thread: %w", err)
 	}
-	thread.ID = result.InsertedID.(primitive.ObjectID)
+	thread.ID = result.InsertedID.(string)
 	return nil
 }
 
 // GetThreadByID retrieves a thread by ID
-func (r *MongoEmailRepository) GetThreadByID(ctx context.Context, threadID primitive.ObjectID) (*MessageThread, error) {
+func (r *MongoEmailRepository) GetThreadByID(ctx context.Context, threadID string) (*MessageThread, error) {
 	filter := bson.M{
 		"_id":     threadID,
 		"channel": string(models.CommunicationChannelEmail),
@@ -286,7 +284,7 @@ func (r *MongoEmailRepository) GetThreadByID(ctx context.Context, threadID primi
 }
 
 // UpdateThreadMetadata updates thread metadata with latest message info
-func (r *MongoEmailRepository) UpdateThreadMetadata(ctx context.Context, threadID primitive.ObjectID, lastMessage *models.MongoCommunication) error {
+func (r *MongoEmailRepository) UpdateThreadMetadata(ctx context.Context, threadID string, lastMessage *models.MongoCommunication) error {
 	// Get current thread
 	thread, err := r.GetThreadByID(ctx, threadID)
 	if err != nil {
@@ -337,8 +335,8 @@ func generateSnippet(body string) string {
 
 // MessageAttachment represents an email attachment
 type MessageAttachment struct {
-	ID              primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	MessageID       primitive.ObjectID `bson:"messageId" json:"messageId"`
+	ID              string `bson:"_id,omitempty" json:"id"`
+	MessageID       string `bson:"messageId" json:"messageId"`
 	FileName        string             `bson:"fileName" json:"fileName"`
 	FileSizeBytes   int64              `bson:"fileSizeBytes" json:"fileSizeBytes"`
 	MimeType        string             `bson:"mimeType" json:"mimeType"`
@@ -359,12 +357,12 @@ func (r *MongoEmailRepository) SaveAttachment(ctx context.Context, att *MessageA
 		return fmt.Errorf("error saving attachment: %w", err)
 	}
 
-	att.ID = result.InsertedID.(primitive.ObjectID)
+	att.ID = result.InsertedID.(string)
 	return nil
 }
 
 // GetAttachmentsByMessage retrieves all attachments for a message
-func (r *MongoEmailRepository) GetAttachmentsByMessage(ctx context.Context, messageID primitive.ObjectID) ([]*MessageAttachment, error) {
+func (r *MongoEmailRepository) GetAttachmentsByMessage(ctx context.Context, messageID string) ([]*MessageAttachment, error) {
 	filter := bson.M{"message_id": messageID}
 
 	cursor, err := r.attachmentsCollection.Find(ctx, filter)
@@ -382,7 +380,7 @@ func (r *MongoEmailRepository) GetAttachmentsByMessage(ctx context.Context, mess
 }
 
 // IncrementAttachmentDownloadCount increments download count for an attachment
-func (r *MongoEmailRepository) IncrementAttachmentDownloadCount(ctx context.Context, attachmentID primitive.ObjectID) error {
+func (r *MongoEmailRepository) IncrementAttachmentDownloadCount(ctx context.Context, attachmentID string) error {
 	filter := bson.M{"_id": attachmentID}
 	update := bson.M{
 		"$inc": bson.M{"downloadCount": 1},
@@ -440,7 +438,7 @@ func (r *MongoEmailRepository) EnsureIndexes(ctx context.Context) error {
 // =============================================================================
 
 // GetThreadByIDCompat retrieves a thread by ID without context, returning *models.MessageThread
-func (r *MongoEmailRepository) GetThreadByIDCompat(threadID primitive.ObjectID) (*models.MessageThread, error) {
+func (r *MongoEmailRepository) GetThreadByIDCompat(threadID string) (*models.MessageThread, error) {
 	ctx := context.Background()
 	repoThread, err := r.GetThreadByID(ctx, threadID)
 	if err != nil {
@@ -487,7 +485,7 @@ func (r *MongoEmailRepository) CreateThreadCompat(thread *models.MessageThread) 
 }
 
 // UpdateThreadMetadataCompat updates thread metadata without context, accepting *models.CommMessage
-func (r *MongoEmailRepository) UpdateThreadMetadataCompat(threadID primitive.ObjectID, lastMessage *models.CommMessage) error {
+func (r *MongoEmailRepository) UpdateThreadMetadataCompat(threadID string, lastMessage *models.CommMessage) error {
 	ctx := context.Background()
 	// Convert CommMessage to MongoCommunication for the underlying method
 	mongoComm := &models.MongoCommunication{
@@ -501,7 +499,7 @@ func (r *MongoEmailRepository) UpdateThreadMetadataCompat(threadID primitive.Obj
 }
 
 // GetMessagesByThreadCompat retrieves messages by thread without context, returning []*models.CommMessage
-func (r *MongoEmailRepository) GetMessagesByThreadCompat(threadID primitive.ObjectID) ([]*models.CommMessage, error) {
+func (r *MongoEmailRepository) GetMessagesByThreadCompat(threadID string) ([]*models.CommMessage, error) {
 	ctx := context.Background()
 	mongoMessages, err := r.GetMessagesByThread(ctx, threadID)
 	if err != nil {
@@ -524,7 +522,7 @@ func (r *MongoEmailRepository) GetMessagesByThreadCompat(threadID primitive.Obje
 }
 
 // GetMessageByIDCompat retrieves a message by ID and converts to CommMessage (service layer compatibility)
-func (r *MongoEmailRepository) GetMessageByIDCompat(messageID primitive.ObjectID) (*models.CommMessage, error) {
+func (r *MongoEmailRepository) GetMessageByIDCompat(messageID string) (*models.CommMessage, error) {
 	ctx := context.Background()
 	mongoMsg, err := r.GetMessageByID(ctx, messageID)
 	if err != nil {
@@ -548,12 +546,12 @@ func (r *MongoEmailRepository) GetMessageByIDCompat(messageID primitive.ObjectID
 }
 
 // UpdateMessageStatusCompat updates message status (service layer compatibility - no context)
-func (r *MongoEmailRepository) UpdateMessageStatusCompat(messageID primitive.ObjectID, status string) error {
+func (r *MongoEmailRepository) UpdateMessageStatusCompat(messageID string, status string) error {
 	return r.UpdateMessageStatus(context.Background(), messageID, status)
 }
 
 // GetInboxCompat retrieves inbox messages with filters (service layer compatibility - no context)
-func (r *MongoEmailRepository) GetInboxCompat(userID primitive.ObjectID, filters EmailFilters) ([]*models.CommMessage, error) {
+func (r *MongoEmailRepository) GetInboxCompat(userID string, filters EmailFilters) ([]*models.CommMessage, error) {
 	mongoMsgs, err := r.GetInbox(context.Background(), userID, filters)
 	if err != nil {
 		return nil, err
@@ -581,7 +579,7 @@ func (r *MongoEmailRepository) GetInboxCompat(userID primitive.ObjectID, filters
 }
 
 // MarkAsReadCompat marks a message as read (service layer compatibility - no context)
-func (r *MongoEmailRepository) MarkAsReadCompat(messageID primitive.ObjectID) error {
+func (r *MongoEmailRepository) MarkAsReadCompat(messageID string) error {
 	return r.MarkAsRead(context.Background(), messageID)
 }
 
@@ -655,8 +653,8 @@ type CustomerLookupResult struct {
 }
 
 // lookupCustomer retrieves customer info for populating communication fields
-func (r *MongoEmailRepository) lookupCustomer(customerID primitive.ObjectID) (*CustomerLookupResult, error) {
-	if customerID.IsZero() {
+func (r *MongoEmailRepository) lookupCustomer(customerID string) (*CustomerLookupResult, error) {
+	if customerID != "" {
 		return nil, nil
 	}
 	collection := r.client.Database().Collection("customers")
@@ -686,25 +684,25 @@ func (r *MongoEmailRepository) SaveAttachmentCompat(att *models.MessageAttachmen
 }
 
 // IncrementAttachmentDownloadCountCompat increments attachment download count (service layer compatibility)
-func (r *MongoEmailRepository) IncrementAttachmentDownloadCountCompat(attachmentID primitive.ObjectID) error {
+func (r *MongoEmailRepository) IncrementAttachmentDownloadCountCompat(attachmentID string) error {
 	return r.IncrementAttachmentDownloadCount(context.Background(), attachmentID)
 }
 
 
 // DeleteMessage deletes a message by ID (used for rollback on scheduling failure)
-func (r *MongoEmailRepository) DeleteMessage(ctx context.Context, messageID primitive.ObjectID) error {
+func (r *MongoEmailRepository) DeleteMessage(ctx context.Context, messageID string) error {
 	filter := bson.M{"_id": messageID}
 	result, err := r.messagesCollection.DeleteOne(ctx, filter)
 	if err != nil {
 		return fmt.Errorf("error deleting message: %w", err)
 	}
 	if result.DeletedCount == 0 {
-		return fmt.Errorf("message not found: %s", messageID.Hex())
+		return fmt.Errorf("message not found: %s", messageID)
 	}
 	return nil
 }
 
 // DeleteMessageCompat deletes a message by ID (service layer compatibility)
-func (r *MongoEmailRepository) DeleteMessageCompat(messageID primitive.ObjectID) error {
+func (r *MongoEmailRepository) DeleteMessageCompat(messageID string) error {
 	return r.DeleteMessage(context.Background(), messageID)
 }
