@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/white/user-management/internal/events"
 	"github.com/white/user-management/internal/middleware"
 	"github.com/white/user-management/internal/models"
 	"github.com/white/user-management/internal/repositories"
@@ -14,19 +15,20 @@ import (
 // SettingsHandler handles settings-related HTTP requests
 // NOTE: Profile is read-only (managed by O365), so no userRepo needed for password changes
 type SettingsHandler struct {
-	repo             *repositories.SettingsRepository
+	repo *repositories.SettingsRepository
 	// approvalRuleRepo *repositories.ApprovalRuleRepository
+	auditPublisher *events.AuditPublisher
 }
 
 // NewSettingsHandler creates a new SettingsHandler
 // func NewSettingsHandler(repo *repositories.SettingsRepository, approvalRuleRepo *repositories.ApprovalRuleRepository) *SettingsHandler {
-func NewSettingsHandler(repo *repositories.SettingsRepository) *SettingsHandler {
+func NewSettingsHandler(repo *repositories.SettingsRepository, auditPublisher *events.AuditPublisher) *SettingsHandler {
 	return &SettingsHandler{
-		repo:             repo,
+		repo: repo,
 		// approvalRuleRepo: approvalRuleRepo,
+		auditPublisher: auditPublisher,
 	}
 }
-
 
 // Helper to get userID from context
 func (h *SettingsHandler) getUserID(r *http.Request) (string, bool) {
@@ -125,6 +127,19 @@ func (h *SettingsHandler) UpdateCompanyInfo(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to update company info: "+err.Error())
 		return
+	}
+
+	// Publish audit log event (fire-and-forget)
+	if h.auditPublisher != nil {
+		userID, _ := h.getUserID(r)
+		userName, _ := r.Context().Value(middleware.NameKey).(string)
+		h.auditPublisher.PublishSettingsEvent(
+			r,
+			userID,
+			userName,
+			events.ActionSettingsUpdated,
+			"Company information updated",
+		)
 	}
 
 	respondWithJSON(w, http.StatusOK, map[string]interface{}{
@@ -256,5 +271,171 @@ func (h *SettingsHandler) GetAuditLogs(w http.ResponseWriter, r *http.Request) {
 			"limit":  limit,
 			"offset": offset,
 		},
+	})
+}
+
+// ==================== System Default Settings ====================
+
+// GetSystemDefaultSettings godoc
+// @Summary Get system default settings
+// @Description Get system-wide default settings (timezone, currency, language, etc.)
+// @Tags Settings
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /system/defaults [get]
+func (h *SettingsHandler) GetSystemDefaultSettings(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.getUserID(r)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	settings, err := h.repo.GetSystemDefaultSettings(r.Context())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to get system default settings: "+err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"data":    settings,
+	})
+}
+
+
+// UpdateSystemDefaultSettings godoc
+// @Summary Update system default settings
+// @Description Update system-wide default settings (admin only)
+// @Tags Settings
+// @Accept json
+// @Produce json
+// @Param request body models.UpdateSystemDefaultSettingsRequest true "Settings update data"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /system/defaults [put]
+func (h *SettingsHandler) UpdateSystemDefaultSettings(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.getUserID(r)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	var req models.UpdateSystemDefaultSettingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	settings, err := h.repo.UpdateSystemDefaultSettings(r.Context(), &req)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to update system default settings: "+err.Error())
+		return
+	}
+
+	// Publish audit log event (fire-and-forget)
+	if h.auditPublisher != nil {
+		userID, _ := h.getUserID(r)
+		userName, _ := r.Context().Value(middleware.NameKey).(string)
+		h.auditPublisher.PublishSettingsEvent(
+			r,
+			userID,
+			userName,
+			events.ActionSettingsUpdated,
+			"System default settings updated",
+		)
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"data":    settings,
+		"message": "System default settings updated successfully",
+	})
+}
+
+
+// ==================== System Email & Notification Settings ====================
+
+// GetSystemEmailNotificationSettings godoc
+// @Summary Get system email notification settings
+// @Description Get system-wide email and notification settings
+// @Tags Settings
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /system/email-notifications [get]
+func (h *SettingsHandler) GetSystemEmailNotificationSettings(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.getUserID(r)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	settings, err := h.repo.GetSystemEmailNotificationSettings(r.Context())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to get system email notification settings: "+err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"data":    settings,
+	})
+}
+
+// UpdateSystemEmailNotificationSettings godoc
+// @Summary Update system email notification settings
+// @Description Update system-wide email and notification settings (admin only)
+// @Tags Settings
+// @Accept json
+// @Produce json
+// @Param request body models.UpdateSystemEmailNotificationSettingsRequest true "Email notification settings update data"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /system/email-notifications [put]
+func (h *SettingsHandler) UpdateSystemEmailNotificationSettings(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.getUserID(r)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	var req models.UpdateSystemEmailNotificationSettingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	settings, err := h.repo.UpdateSystemEmailNotificationSettings(r.Context(), &req)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to update system email notification settings: "+err.Error())
+		return
+	}
+
+	// Publish audit log event (fire-and-forget)
+	if h.auditPublisher != nil {
+		userID, _ := h.getUserID(r)
+		userName, _ := r.Context().Value(middleware.NameKey).(string)
+		h.auditPublisher.PublishSettingsEvent(
+			r,
+			userID,
+			userName,
+			events.ActionSettingsUpdated,
+			"System email notification settings updated",
+		)
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"data":    settings,
+		"message": "System email notification settings updated successfully",
 	})
 }

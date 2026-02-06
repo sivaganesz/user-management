@@ -165,7 +165,7 @@ func main() {
 	// =====================================================
 	// Initialize MongoDB handlers (using MongoDB repositories)
 	// Settings handler (User Profile, Security, Email Signature, Company, Notifications, Audit Logs, Approval Rules)
-	settingsHandler := handlers.NewSettingsHandler(settingsRepo)
+	settingsHandler := handlers.NewSettingsHandler(settingsRepo,auditPublisher)
 	log.Println("Settings Module handler initialized")
 
 	// Initialize router
