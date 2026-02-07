@@ -20,7 +20,6 @@ import (
 	"github.com/white/user-management/pkg/mongodb"
 	"github.com/white/user-management/pkg/smtp"
 	"github.com/white/user-management/pkg/uuid"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type AuthHandler struct {
@@ -923,7 +922,7 @@ func (h *AuthHandler) publishLoginEvent(user *models.User, ipAddress, userAgent 
 	}
 
 	event := map[string]interface{}{
-		"event_id":     primitive.NewObjectID().String(),
+		"event_id":     uuid.MustNewUUID(),
 		"user_id":      user.ID,
 		"email":        user.Email,
 		"role":         user.Role,
@@ -953,7 +952,7 @@ func (h *AuthHandler) publishLogoutEvent(user *models.User, ipAddress, userAgent
 	}
 
 	event := map[string]interface{}{
-		"event_id":      primitive.NewObjectID().String(),
+		"event_id":      uuid.MustNewUUID(),
 		"user_id":       user.ID,
 		"email":         user.Email,
 		"role":          user.Role,

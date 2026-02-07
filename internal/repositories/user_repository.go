@@ -9,7 +9,6 @@ import (
 	"github.com/white/user-management/pkg/mongodb"
 	"github.com/white/user-management/pkg/uuid"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -670,8 +669,8 @@ func (r *MongoUserRepository) LogActivity(activity *models.UserActivityLog) erro
 
 	now := time.Now()
 	activity.CreatedAt = now
-	if activity.ActivityID.IsZero() {
-		activity.ActivityID = primitive.NewObjectID()
+	if activity.ActivityID == "" {
+		activity.ActivityID = uuid.MustNewUUID()
 	}
 
 	_, err := collection.InsertOne(ctx, activity)

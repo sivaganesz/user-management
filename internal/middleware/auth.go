@@ -10,7 +10,6 @@ import (
 	"github.com/white/user-management/internal/models"
 	"github.com/white/user-management/internal/utils"
 	"github.com/white/user-management/pkg/uuid"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 const (
@@ -79,7 +78,7 @@ func JWTAuth(jwtService *utils.JWTService) func(http.Handler) http.Handler {
 				return
 			}
 
-			userObjectID, err := primitive.ObjectIDFromHex(claims.UserID)
+			userObjectID, err := uuid.ValidateUUID(claims.UserID)
 			if err != nil {
 				log.Printf("Invalid user ID format in token: %v", err)
 				respondWithJSON(w, http.StatusUnauthorized, ErrorResponse{

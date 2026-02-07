@@ -1,11 +1,13 @@
 package services
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"time"
+	"log"
 
 	"github.com/white/user-management/internal/models"
 	"github.com/white/user-management/internal/repositories"
@@ -15,7 +17,7 @@ import (
 )
 
 type AuthService struct {
-	userRepo          *repositories.MongoUserRepository
+	userRepo          *repositories.UserRepository
 	sessionRepo       *repositories.SessionRepository
 	passwordResetRepo *repositories.PasswordResetRepository
 	permissionRepo    *repositories.PermissionRepository
@@ -52,6 +54,18 @@ func (s *AuthService) Login(email, password, ipAddress, userAgent string) (*mode
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
 		println("Password mismatch:", err.Error())
 		return nil, nil, fmt.Errorf("Invalid Credentials")
+	}
+
+		// Load permissions from role_permissions collection
+	if s.permissionRepo != nil {
+		ctx := context.Background()
+		permissions, _, err := s.permissionRepo.GetPermissionsForRole(ctx, user.Role)
+		if err != nil {
+			log.Printf("Auth: failed to load permissions for role %s: %v", user.Role, err)
+		} else if len(permissions) > 0 {
+			user.Permissions = permissions
+			log.Printf("Auth: loaded %d permissions for role %s", len(permissions), user.Role)
+		}
 	}
 
 	accessToken, err := s.jwtService.GenerateAccessToken(user)
@@ -156,6 +170,17 @@ func (s *AuthService) RefreshToken(refreshToken string) (*models.TokenPair, erro
 	// Check if user is active (default to true if not set)
 	if !user.IsActive {
 		return nil, fmt.Errorf("account is disabled")
+	}
+	
+	// Load permissions from role_permissions collection
+	if s.permissionRepo != nil {
+		ctx := context.Background()
+		permissions, _, err := s.permissionRepo.GetPermissionsForRole(ctx, user.Role)
+		if err != nil {
+			log.Printf("Auth: failed to load permissions for role %s: %v", user.Role, err)
+		} else if len(permissions) > 0 {
+			user.Permissions = permissions
+		}
 	}
 
 	// Generate new access token

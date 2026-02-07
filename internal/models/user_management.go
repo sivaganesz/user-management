@@ -3,14 +3,12 @@ package models
 
 import (
 	"time"
-
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // UserActivityLog represents a user activity for audit trail
 type UserActivityLog struct {
-	UserID       primitive.ObjectID `json:"user_id"`
-	ActivityID   primitive.ObjectID `json:"activity_id"`
+	UserID       string `json:"user_id"`
+	ActivityID   string `json:"activity_id"`
 	ActivityType string             `json:"activity_type"`
 	Description  string             `json:"description"`
 	IPAddress    string             `json:"ip_address,omitempty"`
@@ -32,8 +30,8 @@ const (
 
 // UserSession represents an active user session
 type UserSession struct {
-	SessionID      primitive.ObjectID `json:"session_id"`
-	UserID         primitive.ObjectID `json:"user_id"`
+	SessionID      string `json:"session_id"`
+	UserID         string `json:"user_id"`
 	RefreshToken   string             `json:"-"` // Never expose in JSON
 	IPAddress      string             `json:"ip_address"`
 	UserAgent      string             `json:"user_agent"`
@@ -57,7 +55,7 @@ type MongoUserPreferences struct {
 
 // UserPreferences represents user-specific preferences
 type UserPreferences struct {
-	UserID             primitive.ObjectID `json:"user_id"`
+	UserID             string `json:"user_id"`
 	Language           string             `json:"language"`
 	Timezone           string             `json:"timezone"`
 	DateFormat         string             `json:"date_format"`
