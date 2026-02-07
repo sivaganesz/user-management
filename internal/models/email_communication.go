@@ -25,7 +25,6 @@ type MongoCommunication struct {
 	Attachments []CommunicationAttachment `bson:"attachments,omitempty" json:"attachments,omitempty"` // File attachments
 	Priority    string                    `bson:"priority,omitempty" json:"priority,omitempty"`  // normal, high, urgent
 	CustomerID  string        `bson:"customer_id,omitempty" json:"customerId,omitempty"`
-	DealID      string        `bson:"deal_id,omitempty" json:"dealId,omitempty"`
 	CampaignID  string        `bson:"campaign_id,omitempty" json:"campaignId,omitempty"`
 	UserID      string        `bson:"user_id,omitempty" json:"userId,omitempty"`     // Sender/owner user ID
 	Status      string                    `bson:"status" json:"status"`                          // pending, queued, sending, sent, delivered, opened, clicked, bounced, failed, spam, unsubscribed

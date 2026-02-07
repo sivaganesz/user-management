@@ -25,19 +25,7 @@ var (
 	ErrDeleteFailed = errors.New("delete failed")
 )
 
-// Domain-specific "not found" errors
-// These errors wrap mongo.ErrNoDocuments to provide domain context
-// Usage in repositories:
-//
-//	if err == mongo.ErrNoDocuments {
-//	    return nil, WrapNotFound(err, ErrDealNotFound)
-//	}
 var (
-	// ErrDealNotFound is returned when a deal is not found
-	ErrDealNotFound = errors.New("deal not found")
-
-	// ErrLeadNotFound is returned when a lead is not found
-	ErrLeadNotFound = errors.New("lead not found")
 
 	// ErrCustomerNotFound is returned when a customer is not found
 	ErrCustomerNotFound = errors.New("customer not found")
@@ -56,12 +44,6 @@ var (
 
 	// ErrCampaignNotFound is returned when a campaign is not found
 	ErrCampaignNotFound = errors.New("campaign not found")
-
-	// ErrQuestionnaireNotFound is returned when a questionnaire is not found
-	ErrQuestionnaireNotFound = errors.New("questionnaire not found")
-
-	// ErrDocumentNotFound is returned when a document is not found
-	ErrDocumentNotFound = errors.New("document not found")
 )
 
 // IsNotFound checks if an error is a not found error
@@ -103,31 +85,6 @@ func IsTemplateNotFound(err error) bool {
 	return errors.Is(err, ErrTemplateNotFound)
 }
 
-
-// IsDocumentNotFound checks if an error indicates a document was not found
-func IsDocumentNotFound(err error) bool {
-	return errors.Is(err, ErrDocumentNotFound)
-}
-
-// WrapNotFound wraps mongo.ErrNoDocuments with a domain-specific error
-// This preserves the original MongoDB error while adding domain context
-//
-// Usage in repository methods:
-//
-//	var deal models.Deal
-//	err := r.collection.FindOne(ctx, filter).Decode(&deal)
-//	if err == mongo.ErrNoDocuments {
-//	    return nil, WrapNotFound(err, ErrDealNotFound)
-//	}
-//	if err != nil {
-//	    return nil, fmt.Errorf("failed to get deal: %w", err)
-//	}
-//	return &deal, nil
-//
-// This allows handlers to check:
-//
-//	if IsDealNotFound(err) { ... }  // domain-specific check
-//	if IsNotFound(err) { ... }      // generic not found check
 func WrapNotFound(err error, domainErr error) error {
 	if err == nil {
 		return nil

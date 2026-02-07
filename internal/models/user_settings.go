@@ -2,8 +2,6 @@ package models
 
 import (
 	"time"
-
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // UserSettings represents complete user settings and preferences
@@ -42,7 +40,7 @@ type UpdateProfileRequest struct {
 
 
 // DefaultUserPreferences returns default preferences for new users
-func DefaultUserPreferences(userID primitive.ObjectID) *UserPreferences {
+func DefaultUserPreferences(userID string) *UserPreferences {
 	return &UserPreferences{
 		UserID:             userID,
 		Language:           "en",
