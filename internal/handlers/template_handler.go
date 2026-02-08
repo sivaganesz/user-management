@@ -21,13 +21,13 @@ import (
 
 // TemplateHandler handles template-related HTTP requests
 type TemplateHandler struct {
-	templateRepo       *repositories.TemplateRepository
-	activityRepo       *repositories.ActivityRepository
-	userRepo           *repositories.MongoUserRepository
-	kafkaProducer      *kafka.Producer
+	templateRepo  *repositories.TemplateRepository
+	activityRepo  *repositories.ActivityRepository
+	userRepo      *repositories.MongoUserRepository
+	kafkaProducer *kafka.Producer
 	// geminiClient       *gemini.GeminiClient
 	// rateLimiter        *utils.RateLimiter
-	cache              *cache.TemplateCache      // Redis cache for templates
+	cache *cache.TemplateCache // Redis cache for templates
 	// integrationHandler *IntegrationHandler       // For Exotel template submission
 }
 
@@ -40,10 +40,9 @@ func NewTemplateHandler(templateRepo *repositories.TemplateRepository, activityR
 		kafkaProducer: kafkaProducer,
 		// geminiClient:  geminiClient,
 		// rateLimiter:   utils.NewRateLimiter(10, 1*time.Hour), // 10 requests per hour
-		cache:         templateCache,
+		cache: templateCache,
 	}
 }
-
 
 // getTenantID gets tenant ID from context, falling back to user ID if not set
 // This allows the template system to work in single-tenant mode where tenant_id
@@ -104,7 +103,7 @@ func (h *TemplateHandler) CreateTemplate(w http.ResponseWriter, r *http.Request)
 
 	// Validate channel
 	if !models.IsValidChannel(req.Channel) {
-		respondWithError(w, http.StatusBadRequest, "Invalid channel: must be email, sms, whatsapp, or linkedin")
+		respondWithError(w, http.StatusBadRequest, "Invalid channel: must be email, sms")
 		return
 	}
 
@@ -1018,6 +1017,134 @@ func (h *TemplateHandler) DeleteTemplate(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// DuplicateTemplate godoc
+// @Summary Clone a template
+// @Description Creates a copy of an existing template with a new UUID. Appends " (Copy)" to the name, sets status to draft, and version to 1. Does not copy analytics.
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param id path string true "Source Template ID (UUID)"
+// @Success 201 {object} models.MongoTemplate
+// @Failure 400 {object} map[string]string "Invalid template ID"
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 404 {object} map[string]string "Source template not found"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /api/v1/templates/{id}/duplicate [post]
+// @Security BearerAuth
+func (h *TemplateHandler) DuplicateTemplate(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	sourceTemplateID := vars["id"]
+	ctx := r.Context()
+	_, err := uuid.ValidateUUID(sourceTemplateID)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid template ID format")
+		return
+	}
+
+	// Get user ID from context
+	var createdBy string
+	if userID, ok := r.Context().Value("user_id").(string); ok {
+		createdBy = userID
+	} else {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	tenantID, err := h.getTenantID(r)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invaild tenant ID")
+	}
+	// Get source template
+	sourceTemplate, err := h.templateRepo.GetTemplateByIDCompat(tenantID, sourceTemplateID)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "Source template not found: "+err.Error())
+		return
+	}
+
+	// Create new template (copy)
+	now := time.Now()
+	newTemplate := &models.MongoTemplate{
+		ID:           uuid.MustNewUUID(), // New UUID
+		TenantID:     tenantID,
+		Name:         sourceTemplate.Name + " (Copy)",
+		Description:  sourceTemplate.Description,
+		Channel:      sourceTemplate.Channel,
+		Category:     sourceTemplate.Category,
+		Status:       "draft", // Always draft
+		Content:      make(map[string]string),
+		Subject:      sourceTemplate.Subject,
+		Body:         sourceTemplate.Body,
+		Variables:    make([]string, len(sourceTemplate.Variables)),
+		CustomFields: make(map[string]string),
+		Tags:         make([]string, len(sourceTemplate.Tags)),
+		Version:      1,     // Reset version
+		IsSystem:     false, // Never system template
+		CreatedBy:    createdBy,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		PublishedAt:  nil, // Not published
+		PublishedBy:  "",
+	}
+
+	for k, v := range sourceTemplate.Content {
+		newTemplate.Content[k] = v
+	}
+
+	// Copy variables (merge tags)
+	copy(newTemplate.Variables, sourceTemplate.Variables)
+
+	// Copy custom fields
+	if sourceTemplate.CustomFields != nil {
+		for k, v := range sourceTemplate.CustomFields {
+			newTemplate.CustomFields[k] = v
+		}
+	}
+
+	// Copy tags
+	copy(newTemplate.Tags, sourceTemplate.Tags)
+
+	// Create new template in database
+	if err := h.templateRepo.CreateTemplateCompat(newTemplate); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to duplicate template: "+err.Error())
+		return
+	}
+
+	// Publish Kafka event (fire-and-forget)
+	if h.kafkaProducer != nil {
+		event := map[string]interface{}{
+			"event_type":         "template.created",
+			"template_id":        newTemplate.ID,
+			"source_template_id": sourceTemplateID,
+			"tenant_id":          newTemplate.TenantID,
+			"channel":            newTemplate.Channel,
+			"status":             newTemplate.Status,
+			"created_by":         createdBy,
+			"created_at":         now.Unix(),
+			"is_duplicate":       true,
+		}
+		_ = h.kafkaProducer.PublishJSON(ctx, "template.created", event)
+	}
+	// Log activity
+	activity := &models.Activity{
+		ID:            uuid.MustNewUUID(),
+		ActivityType:  "note",
+		Title:         "Template Duplicated",
+		Description:   "Template duplicated from: " + sourceTemplate.Name,
+		Owner:         createdBy,
+		RelatedToType: "template",
+		RelatedToID:   newTemplate.ID,
+		Status:        "completed",
+		Priority:      "medium",
+		CreatedBy:     createdBy,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	_ = h.activityRepo.CreateActivityCompat(activity)
+
+	// Return template directly (MongoTemplate has proper JSON tags)
+	respondWithJSON(w, http.StatusCreated, newTemplate)
+}
+
 func (h *TemplateHandler) getCampaignScope(r *http.Request) (models.DataScope, services.ScopeClaims, error) {
 	ctx := r.Context()
 	userID, ok := ctx.Value(middleware.UserIDKey).(string)
@@ -1038,4 +1165,150 @@ func (h *TemplateHandler) getCampaignScope(r *http.Request) (models.DataScope, s
 		return models.DataScope{}, services.ScopeClaims{}, err
 	}
 	return dataScope, services.ScopeClaims{UserID: userID, Team: team, Region: region, TeamUserIDs: teamUserIDs}, nil
+}
+
+
+// =====================================================
+// Statistics & Analytics
+// =====================================================
+// ArchiveTemplate godoc
+// @Summary Archive a template
+// @Description Archives a template (soft delete), setting status to archived
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param id path string true "Template ID"
+// @Success 200 {object} models.MongoTemplate
+// @Failure 400 {object} map[string]string "Invalid template ID"
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 404 {object} map[string]string "Template not found"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /api/v1/templates/{id}/archive [put]
+// @Security BearerAuth
+func (h *TemplateHandler) ArchiveTemplate(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	templateID := vars["id"]
+	ctx := r.Context()
+	_, err := uuid.ValidateUUID(templateID)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid template ID format")
+		return
+	}
+
+	// Get tenant ID from context (with fallback to user ID)
+	tenantID, err := h.getTenantID(r)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid tenant ID")
+		return
+	}
+
+	// Get existing template
+	template, err := h.templateRepo.GetTemplateByIDCompat(tenantID, templateID)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "Template not found: "+err.Error())
+		return
+	}
+
+	// Check if already archived
+	if template.Status == "archived" {
+		respondWithError(w, http.StatusBadRequest, "Template is already archived")
+		return
+	}
+
+	// Cannot archive system templates
+	if template.IsSystem {
+		respondWithError(w, http.StatusBadRequest, "System templates cannot be archived")
+		return
+	}
+
+	// Update status to archived
+	template.Status = "archived"
+	template.UpdatedAt = time.Now()
+
+	if err := h.templateRepo.UpdateTemplateCompat(template); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to archive template: "+err.Error())
+		return
+	}
+
+	// Publish Kafka event
+	if h.kafkaProducer != nil {
+		event := map[string]interface{}{
+			"event_type":  "template.archived",
+			"template_id": template.ID,
+			"tenant_id":   template.TenantID,
+			"archived_at": time.Now().Unix(),
+		}
+		_ = h.kafkaProducer.PublishJSON(ctx, "template.archived", event)
+	}
+
+	// Return frontend-compatible response
+	respondWithJSON(w, http.StatusOK, template)
+}
+
+// RestoreTemplate godoc
+// @Summary Restore an archived template
+// @Description Restores an archived template, setting status to draft
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param id path string true "Template ID"
+// @Success 200 {object} models.MongoTemplate
+// @Failure 400 {object} map[string]string "Invalid template ID or not archived"
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 404 {object} map[string]string "Template not found"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /api/v1/templates/{id}/restore [put]
+// @Security BearerAuth
+func (h *TemplateHandler) RestoreTemplate(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	templateID := vars["id"]
+	ctx := r.Context()
+	_, err := uuid.ValidateUUID(templateID)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid template ID format")
+		return
+	}
+
+	// Get tenant ID from context (with fallback to user ID)
+	tenantID, err := h.getTenantID(r)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid tenant ID")
+		return
+	}
+
+	// Get existing template
+	template, err := h.templateRepo.GetTemplateByIDCompat(tenantID, templateID)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "Template not found: "+err.Error())
+		return
+	}
+
+	// Check if archived
+	if template.Status != "archived" {
+		respondWithError(w, http.StatusBadRequest, "Template is not archived")
+		return
+	}
+
+	// Update status to draft
+	template.Status = "draft"
+	template.UpdatedAt = time.Now()
+
+	if err := h.templateRepo.UpdateTemplateCompat(template); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to restore template: "+err.Error())
+		return
+	}
+
+	// Publish Kafka event
+	if h.kafkaProducer != nil {
+		event := map[string]interface{}{
+			"event_type":  "template.restored",
+			"template_id": template.ID,
+			"tenant_id":   template.TenantID,
+			"restored_at": time.Now().Unix(),
+		}
+		_ = h.kafkaProducer.PublishJSON(ctx, "template.restored", event)
+	}
+
+	// Return frontend-compatible response
+	respondWithJSON(w, http.StatusOK, template)
 }
