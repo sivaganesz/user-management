@@ -242,3 +242,29 @@ type MessageAttachment struct {
 
 // CommMessageAttachment is an alias for MessageAttachment (for consistency in communication repo)
 type CommMessageAttachment = MessageAttachment
+
+// ScheduleDefinition represents a campaign schedule configuration
+type ScheduleDefinition struct {
+	ID                 string          `bson:"_id,omitempty" json:"id"`
+	Name               string          `bson:"name" json:"name"`
+	Description        string          `bson:"description,omitempty" json:"description,omitempty"`
+	Frequency          string          `bson:"frequency" json:"frequency"` // daily, weekly, monthly
+	DayOfWeek          int             `bson:"day_of_week,omitempty" json:"dayOfWeek,omitempty"`
+	DayOfMonth         int             `bson:"day_of_month,omitempty" json:"dayOfMonth,omitempty"`
+	Time               string          `bson:"time" json:"time"` // HH:MM format
+	TimeZone           string          `bson:"timezone" json:"timeZone"`
+	UseContactTimeZone bool            `bson:"use_contact_timezone" json:"useContactTimeZone"`
+	ExcludedHolidays   []string        `bson:"excluded_holidays" json:"excludedHolidays"`
+	SendingWindows     []SendingWindow `bson:"sending_windows" json:"sendingWindows"`
+	IsActive           bool            `bson:"is_active" json:"isActive"`
+	CreatedBy          string          `bson:"created_by" json:"createdBy"`
+	CreatedAt          time.Time       `bson:"created_at" json:"createdAt"`
+	UpdatedAt          time.Time       `bson:"updated_at" json:"updatedAt"`
+}
+
+// SendingWindow represents a time window for sending messages
+type SendingWindow struct {
+	DayOfWeek string `bson:"day_of_week" json:"dayOfWeek"` // monday, tuesday, etc.
+	StartTime string `bson:"start_time" json:"startTime"`  // HH:MM format
+	EndTime   string `bson:"end_time" json:"endTime"`      // HH:MM format
+}
