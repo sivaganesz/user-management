@@ -144,6 +144,9 @@ func main() {
 	// Permission repository (RBAC - Role-Based Access Control)
 	permissionRepo := repositories.NewPermissionRepository(mongoClient)
 
+	scheduleDefinitionRepo := repositories.NewScheduleDefinitionRepository(mongoClient)
+	mongoActivityRepo := repositories.NewMongoActivityRepository(mongoClient)
+
 	// log.Println("MongoDB repositories initialized (all modules including Phase 3)")
 	// emailRepo := repositories.NewMongoEmailRepository(mongoClient)
 
@@ -167,6 +170,9 @@ func main() {
 	// Settings handler (User Profile, Security, Email Signature, Company, Notifications, Audit Logs, Approval Rules)
 	settingsHandler := handlers.NewSettingsHandler(settingsRepo,auditPublisher)
 	log.Println("Settings Module handler initialized")
+
+
+	schedulerHandler := handlers.NewSchedulerHandler(scheduleDefinitionRepo, mongoActivityRepo)
 
 	// Initialize router
 	router := mux.NewRouter()
@@ -280,6 +286,17 @@ func main() {
 	api.Handle("/system/notifications", authMiddleware(http.HandlerFunc(settingsHandler.GetNotificationSettings))).Methods("GET", "OPTIONS")
 	api.Handle("/system/notifications", authMiddleware(http.HandlerFunc(settingsHandler.UpdateNotificationSettings))).Methods("PUT", "OPTIONS")
 	api.Handle("/system/audit-logs", authMiddleware(http.HandlerFunc(settingsHandler.GetAuditLogs))).Methods("GET", "OPTIONS")
+
+	// ==================================
+	// Multi-Channel Campaign CRUD Routes 
+	// ==================================
+
+	// Campaign Schedule Definitions - MUST come BEFORE /campaigns/{id} to avoid route conflict
+	api.Handle("/campaigns/schedule-definitions", authMiddleware(http.HandlerFunc(schedulerHandler.GetScheduleDefinitions))).Methods("GET", "OPTIONS")           // Get campaign schedule definitions for dropdown selection
+	api.Handle("/campaigns/schedule-definitions", authMiddleware(http.HandlerFunc(schedulerHandler.CreateScheduleDefinition))).Methods("POST", "OPTIONS")        // Create new schedule definition
+	api.Handle("/campaigns/schedule-definitions/{id}", authMiddleware(http.HandlerFunc(schedulerHandler.UpdateScheduleDefinition))).Methods("PUT", "OPTIONS")    // Update schedule definition
+	api.Handle("/campaigns/schedule-definitions/{id}", authMiddleware(http.HandlerFunc(schedulerHandler.DeleteScheduleDefinition))).Methods("DELETE", "OPTIONS") // Delete schedule definition
+	log.Println("Campaign Schedule Definition CRUD routes registered (4 endpoints)")
 
 	log.Println("Background workers run in go-worker (separate process)")
 
