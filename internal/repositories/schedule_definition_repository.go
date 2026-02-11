@@ -172,3 +172,56 @@ func (r *ScheduleDefinitionRepository) DeleteScheduleDefinition(id string) error
 	}
 	return nil
 }
+
+// Count return the total number of schedule definitions
+func (r *ScheduleDefinitionRepository) Count(activeOnly bool) (int64, error) {
+
+	filter := bson.M{}
+	if activeOnly {
+		filter["is_active"] = true
+	}
+
+	count, err := r.collection.CountDocuments(context.Background(), filter)
+	if err != nil {
+		return 0, fmt.Errorf("error counting schedule definitions: %w", err)
+	}
+	return count, nil
+}
+
+// EnsureIndex creates the required indexes for the schedule definitions collection
+func (r *ScheduleDefinitionRepository) EnsureIndex() error {
+	indexes := []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "_id", Value: 1},
+			},
+			Options: options.Index().SetUnique(true),
+		},
+		{
+			Keys: bson.D{
+				{Key: "name", Value: 1},
+			},
+		},
+		{
+			Keys: bson.D{
+				{Key: "is_active", Value: 1},
+			},
+		},
+		{
+			Keys: bson.D{
+				{Key: "created_by", Value: 1},
+			},
+		},
+		{
+			Keys: bson.D{
+				{Key: "created_at", Value: -1},
+			},
+		},
+	}
+	_, err := r.collection.Indexes().CreateMany(context.Background(), indexes)
+	if err != nil {
+		return fmt.Errorf("error creating indexes: %w", err)
+	}
+
+	return nil
+}
