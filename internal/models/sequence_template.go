@@ -56,11 +56,14 @@ type CampaignSequenceStep struct {
 	ContentTemplateID string                   `json:"templateId" bson:"content_template_id,omitempty" db:"content_template_id" validate:"required"`
 	Subject           string                   `json:"subject,omitempty" bson:"subject,omitempty" db:"subject"` // For email channel
 	Body              string                   `json:"message" bson:"body" db:"body" validate:"required"`
+	DelayDays         int                      `json:"delayDays" bson:"delay_days" db:"delay_days"`
 	WaitDays          int                      `json:"waitDays" bson:"wait_days" db:"wait_days"`
 	WaitHours         int                      `json:"waitHours" bson:"wait_hours" db:"wait_hours"`
 	BranchConditions  string                   `json:"branchConditions" bson:"branch_conditions,omitempty" db:"branch_conditions"` // JSON
 	Attachments       []SequenceStepAttachment `json:"attachments,omitempty" bson:"attachments,omitempty" db:"attachments"`        // KOSH documents
-	CreatedAt         time.Time                `json:"createdAt" bson:"created_at" db:"created_at"`
+	SendAt            string                   `json:"sendAt" bson:"send_at" db:"send_at"`
+	SendTime string `json:"sendTime,omitempty" bson:"send_time,omitempty" db:"send_time"`
+	CreatedAt time.Time `json:"createdAt" bson:"created_at" db:"created_at"`
 }
 
 // SequenceTemplateWithSteps combines a template with its ordered steps
@@ -119,6 +122,21 @@ func (s *CampaignSequenceStep) SetBranchConditions(conditions *BranchCondition) 
 // GetTotalWaitDuration returns the total wait duration in hours
 func (s *CampaignSequenceStep) GetTotalWaitDuration() int {
 	return (s.WaitDays * 24) + s.WaitHours
+}
+
+// ValidateSequenceStepTiming validates that each step has send_at (or send_time) and format HH:MM.
+func ValidateSequenceStepTiming(steps []CampaignSequenceStep) error {
+	for i, step := range steps {
+		effective := step.EffectiveSendAt()
+		if effective == "" {
+			return fmt.Errorf("step %d: send_at is required (HH:MM)", step.StepOrder)
+		}
+		if !ValidateSendAtFormat(effective) {
+			return fmt.Errorf("step %d: send_at must be HH:MM (24h), got %q", step.StepOrder, effective)
+		}
+		_ = i
+	}
+	return nil
 }
 
 // ValidateStepOrdering validates that steps are sequentially ordered starting from 1
@@ -250,3 +268,4 @@ func (t *SequenceTemplateWithSteps) Validate() error {
 
 	return nil
 }
+

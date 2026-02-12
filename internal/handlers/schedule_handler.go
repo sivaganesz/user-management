@@ -57,7 +57,6 @@ func (h *SchedulerHandler) GetScheduleDefinitions(w http.ResponseWriter, r *http
 	respondWithJSON(w, http.StatusOK, schedules)
 }
 
-
 // CreateScheduleDefinitionRequest represents the request body for creating a schedule definition
 type CreateScheduleDefinitionRequest struct {
 	Name               string                 `json:"name"`
@@ -154,8 +153,6 @@ func (h *SchedulerHandler) CreateScheduleDefinition(w http.ResponseWriter, r *ht
 
 // UpdateScheduleDefinition godoc
 // @Summary Update a campaign schedule definition
-
-
 // @Description Update an existing campaign schedule definition
 // @Tags Communications - Scheduler
 // @Accept json
@@ -243,9 +240,7 @@ func (h *SchedulerHandler) UpdateScheduleDefinition(w http.ResponseWriter, r *ht
 
 // DeleteScheduleDefinition godoc
 // @Summary Delete a campaign schedule definition
-
-
-// @Description Delete a campaign schedule definition
+// // @Description Delete a campaign schedule definition
 // @Tags Communications - Scheduler
 // @Produce json
 // @Security BearerAuth

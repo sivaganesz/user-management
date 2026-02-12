@@ -20,7 +20,7 @@ type SessionRepository = MongoUserRepository
 type PasswordResetRepository = MongoUserRepository
 type TemplateRepository = MongoTemplateRepository
 type ActivityRepository = MongoActivityRepository
-
+type SequenceTemplateRepository = MongoTemplateRepository
 
 
 // RegionalDashboardRepository is defined in mongo_regional_dashboard_repository.go
